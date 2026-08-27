@@ -76,16 +76,19 @@ struct SettingsView: View {
                     title: "默认输入法",
                     subtitle: "无匹配规则时使用的输入法"
                 ) {
-                    Picker("", selection: $store.defaultInputSourceID) {
-                        Text("不切换").tag(String?.none)
-                        ForEach(inputSources) { source in
-                            Text(source.name).tag(Optional(source.id))
-                        }
+                    AutoInputMenu(
+                        items: [
+                            AutoInputMenu.Item(name: "不切换", value: nil, isSelected: store.defaultInputSourceID == nil),
+                        ] + inputSources.map { source in
+                            AutoInputMenu.Item(name: source.name, value: source.id, isSelected: store.defaultInputSourceID == source.id)
+                        },
+                        selectedName: (store.defaultInputSourceID.flatMap { id in inputSources.first { $0.id == id }?.name }) ?? "不切换",
+                        fixedWidth: 170
+                    ) { newID in
+                        store.defaultInputSourceID = newID
                     }
-                    .labelsHidden()
-                    .frame(width: 240)
-                    .disabled(!store.autoSwitchEnabled)
                     .opacity(store.autoSwitchEnabled ? 1 : 0.5)
+                    .disabled(!store.autoSwitchEnabled)
                 }
             }
         }
@@ -297,7 +300,8 @@ struct RuleRow: View {
     /// 下拉切换输入法时回调，参数为新的输入法 ID。
     let onChangeInputSource: (String) -> Void
     @State private var selectedID: String
-    @State private var hovering = false
+    /// 二段式删除确认：第一次点击进入确认态（变红），再点一次才真正删除。
+    @State private var pendingDelete = false
 
     init(rule: AppRule,
          inputSources: [InputMethodManager.InputSource],
@@ -327,42 +331,53 @@ struct RuleRow: View {
 
                 Spacer()
 
+                // 输入法选择框 + 删除按钮：紧凑成组并整体右对齐。
+                // 用普通 Button 实现的自制下拉（AutoInputMenu）——宽度可被 .frame 固定，
+                // 弹出层为 popover，背景用极淡主题色，与液态玻璃页面一致。
                 HStack(spacing: 6) {
-                    Picker("", selection: $selectedID) {
-                        ForEach(inputSources) { source in
-                            Text(source.name).tag(source.id)
+                    Button {
+                        if pendingDelete {
+                            onDelete()
+                        } else {
+                            pendingDelete = true
                         }
-                    }
-                    .labelsHidden()
-                    .frame(width: 168)
-                    .onChange(of: selectedID) { _, newID in
-                        onChangeInputSource(newID)
-                    }
-                    // 悬停浮现删除：平时收起，减少视觉噪音；悬停行时淡出，直觉化主次操作
-                    Button(action: onDelete) {
-                        Image(systemName: "trash")
+                    } label: {
+                        Image(systemName: pendingDelete ? "trash.fill" : "trash")
                             .font(.system(size: 12, weight: .medium))
-                            .frame(width: 22, height: 22)
-                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(hovering ? Color.secondary : Color.secondary.opacity(0))
-                    .opacity(hovering ? 1 : 0)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(pendingDelete ? Color.red : Color.secondary)
+                    .frame(width: 24, height: 24)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(Color(nsColor: .controlBackgroundColor))
-                            .opacity(hovering ? 1 : 0)
+                            .fill(pendingDelete ? Color.red.opacity(0.14) : Color.clear)
                     )
-                    .accessibilityLabel("删除规则 \(rule.appName)")
-                    .help("删除规则")
-                    .animation(.easeOut(duration: 0.15), value: hovering)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(pendingDelete ? Color.red.opacity(0.4) : Color.clear, lineWidth: 1)
+                    )
+                    .contentShape(Rectangle())
+                    .animation(.easeOut(duration: 0.15), value: pendingDelete)
+                    .accessibilityLabel(pendingDelete ? "再次点击确定删除 \(rule.appName)" : "删除规则 \(rule.appName)")
+                    .help(pendingDelete ? "再次点击确定删除 \(rule.appName)" : "删除规则 \(rule.appName)")
+
+                    AutoInputMenu(
+                        items: inputSources.map { source in
+                            AutoInputMenu.Item(name: source.name, value: source.id, isSelected: selectedID == source.id)
+                        },
+                        selectedName: inputSources.first { $0.id == selectedID }?.name ?? "选择输入法",
+                        fixedWidth: 170
+                    ) { newID in
+                        if let newID, newID != selectedID {
+                            selectedID = newID
+                            onChangeInputSource(newID)
+                        }
+                    }
                 }
                 .help("点击下拉切换该应用的输入法")
             }
-            .padding(12)
-            .onHover { hovering = $0 }
+            .padding(Design.spacing3)
         }
-        .animation(.easeOut(duration: 0.15), value: hovering)
     }
 }
 
@@ -650,5 +665,84 @@ struct AddRuleSheet: View {
             inputSourceName: name
         ))
         dismiss()
+    }
+}
+
+// MARK: - 自制输入法下拉框
+/// 用普通 Button 实现：普通 Button 的 .frame(width:) 可靠生效（原生 Picker / borderlessButton
+/// Menu 会被压缩成跟随内容宽度，无法固定），故能锁定固定宽度；弹出层用系统 popover 毛玻璃，
+/// 触发按钮背景为极淡主题色（深色偏灰、浅色近乎透明），彻底避免原生控件那种突兀的白色长条。
+struct AutoInputMenu: View {
+    struct Item: Identifiable {
+        let name: String
+        let value: String?
+        let isSelected: Bool
+        var id: String { name }
+    }
+
+    let items: [Item]
+    let selectedName: String
+    var fixedWidth: CGFloat = 240
+    var onSelect: (String?) -> Void = { _ in }
+
+    @State private var isOpen = false
+
+    var body: some View {
+        Button {
+            isOpen = true
+        } label: {
+            HStack(spacing: 6) {
+                Text(selectedName)
+                    .lineLimit(1)
+                    .foregroundStyle(Color.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .font(.body.weight(.medium))
+            .padding(.horizontal, 10)
+            .frame(width: fixedWidth, height: 24, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $isOpen, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(items) { (item: AutoInputMenu.Item) in
+                    if item.id != (items.first?.id ?? "") {
+                        Divider().padding(.horizontal, 8)
+                    }
+                    Button {
+                        onSelect(item.value)
+                        isOpen = false
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(item.name)
+                                .font(.body)
+                            Spacer(minLength: 8)
+                            if item.isSelected {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                }
+            }
+            .frame(minWidth: 200)
+            .padding(.vertical, 5)
+        }
     }
 }
