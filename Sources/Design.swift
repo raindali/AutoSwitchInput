@@ -26,6 +26,30 @@ enum Design {
     /// 强调色：深灰（替换系统蓝，页面整体更沉稳、不刺眼）。
     /// Toggle 开态、Picker 选中、按钮、Header 方块、sheet 内 globe 均跟随此色。
     static var accent: Color { Color(white: 0.30) }
+
+    // 状态语义色（沉稳的灰阶，克制使用）
+    static var statusOn: Color { Color(nsColor: .systemGreen) }
+    static var statusOff: Color { Color.secondary.opacity(0.45) }
+}
+
+/// 前导图标磁贴：通用设置区等方式行的分组容器，圆角方块 + 同层内统一的衬底与符号。
+/// 用于在「标题 + 副标题」前建立稳定的视觉锚点，避免设置项一排文字到底而缺少层级。
+struct IconTile: View {
+    let systemName: String
+    var tint: Color = Design.accent
+    var size: CGFloat = 26
+    var cornerRadius: CGFloat = 7
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(Color(nsColor: .controlBackgroundColor))
+            .frame(width: size, height: size)
+            .overlay(
+                Image(systemName: systemName)
+                    .font(.system(size: size * 0.44, weight: .medium))
+                    .foregroundStyle(tint)
+            )
+    }
 }
 
 /// 分区卡片容器：统一内边距、表面、描边与轻微投影。
