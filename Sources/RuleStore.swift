@@ -2,7 +2,15 @@ import Foundation
 import AppKit
 import ServiceManagement
 
+extension Notification.Name {
+    /// 规则变更的跨进程通知（菜单栏进程 ⇄ 设置窗口进程）。
+    static let autoSwitchRulesDidChange = Notification.Name("com.qingwei.inputswitch.rulesDidChange")
+}
+
 /// Observable store for app rules and settings, persisted to UserDefaults.
+///
+/// 设置窗口运行在独立进程里，因此写入 UserDefaults 后需要通知另一个进程重新读取，
+/// 否则菜单栏进程仍会用旧规则去切换输入法。
 class RuleStore: ObservableObject {
     static let shared = RuleStore()
 
@@ -18,8 +26,8 @@ class RuleStore: ObservableObject {
     /// 是否开机启动（登录项）。写入 UserDefaults 并同步系统登录项状态。
     @Published var launchAtLogin: Bool {
         didSet {
-            defaults.set(launchAtLogin, forKey: launchKey)
-            applyLaunchAtLogin()
+            save()
+            applyLaunchAtLoginIfNeeded()
         }
     }
 
@@ -29,6 +37,12 @@ class RuleStore: ObservableObject {
     private let defaultKey = "defaultInputSourceID"
     private let launchKey = "launchAtLogin"
     private let firstLaunchKey = "hasLaunchedBefore"
+
+    /// 正在应用来自另一个进程的变更：此时属性赋值不应再触发保存/回发通知。
+    private var isApplyingRemoteChange = false
+    /// 上次同步给系统的登录项状态，避免每次保存都去问 SMAppService。
+    private var lastAppliedLaunchAtLogin: Bool?
+    private var remoteObserver: NSObjectProtocol?
 
     init() {
         autoSwitchEnabled = defaults.object(forKey: enabledKey) as? Bool ?? true
@@ -49,14 +63,62 @@ class RuleStore: ObservableObject {
             }
             defaults.set(true, forKey: firstLaunchKey)
         }
+
+        remoteObserver = DistributedNotificationCenter.default().addObserver(
+            forName: .autoSwitchRulesDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  let pid = notification.userInfo?["pid"] as? Int,
+                  pid != Int(ProcessInfo.processInfo.processIdentifier)
+            else { return }
+            self.reloadFromDefaults()
+        }
     }
 
     private func save() {
+        guard !isApplyingRemoteChange else { return }
         defaults.set(autoSwitchEnabled, forKey: enabledKey)
         if let data = try? JSONEncoder().encode(rules) {
             defaults.set(data, forKey: rulesKey)
         }
         defaults.set(defaultInputSourceID, forKey: defaultKey)
+        defaults.set(launchAtLogin, forKey: launchKey)
+
+        DistributedNotificationCenter.default().postNotificationName(
+            .autoSwitchRulesDidChange,
+            object: nil,
+            userInfo: ["pid": Int(ProcessInfo.processInfo.processIdentifier)],
+            deliverImmediately: true
+        )
+    }
+
+    /// 从 UserDefaults 重新读取另一个进程写入的变更（不触发保存，避免通知回环）。
+    private func reloadFromDefaults() {
+        isApplyingRemoteChange = true
+        defer { isApplyingRemoteChange = false }
+
+        let newEnabled = defaults.object(forKey: enabledKey) as? Bool ?? true
+        if newEnabled != autoSwitchEnabled {
+            autoSwitchEnabled = newEnabled
+        }
+
+        let newDefaultID = defaults.string(forKey: defaultKey)
+        if newDefaultID != defaultInputSourceID {
+            defaultInputSourceID = newDefaultID
+        }
+
+        let newLaunch = defaults.bool(forKey: launchKey)
+        if newLaunch != launchAtLogin {
+            launchAtLogin = newLaunch
+        }
+
+        if let data = defaults.data(forKey: rulesKey),
+           let decoded = try? JSONDecoder().decode([AppRule].self, from: data),
+           decoded != rules {
+            rules = decoded
+        }
     }
 
     /// 根据 launchAtLogin 同步系统的登录项（开机启动）状态。
@@ -76,6 +138,14 @@ class RuleStore: ObservableObject {
         } catch {
             print("[RuleStore] 开机启动设置失败: \(error.localizedDescription)")
         }
+    }
+
+    /// 只有菜单栏进程负责写系统登录项（设置进程只改 UserDefaults 并通知）。
+    private func applyLaunchAtLoginIfNeeded() {
+        guard !AppMode.isSettingsHelper else { return }
+        guard lastAppliedLaunchAtLogin != launchAtLogin else { return }
+        lastAppliedLaunchAtLogin = launchAtLogin
+        applyLaunchAtLogin()
     }
 
     /// Finds the rule matching the given bundle identifier.

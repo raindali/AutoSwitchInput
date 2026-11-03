@@ -41,6 +41,12 @@ swiftc \
 
 echo "  -> Compiled successfully"
 
+# --- 2b. Duplicate the binary as the settings-window process ---
+# 设置窗口跑在独立进程里（同一二进制 + --settings），关窗即退出；
+# 这样常驻的菜单栏进程无需承载 SwiftUI 的视图图与渲染缓存。
+cp "$BUNDLE_DIR/Contents/MacOS/$APP_NAME" "$BUNDLE_DIR/Contents/MacOS/${APP_NAME}Settings"
+echo "  -> Settings helper created"
+
 # --- 3. Copy Info.plist ---
 echo "[3/5] Copying Info.plist..."
 cp "$RES_DIR/Info.plist" "$BUNDLE_DIR/Contents/Info.plist"

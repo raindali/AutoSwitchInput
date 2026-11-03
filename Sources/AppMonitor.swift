@@ -10,7 +10,7 @@ class AppMonitor {
     private(set) var currentBundleID: String?
     private(set) var currentAppName: String?
     private var observer: NSObjectProtocol?
-    private var debounceTimer: Timer?
+    private var pendingChange: DispatchWorkItem?
 
     func start() {
         // Capture the app that was active at launch
@@ -31,16 +31,23 @@ class AppMonitor {
             let bundleID = app.bundleIdentifier ?? ""
             let name = app.localizedName ?? ""
 
-            // Only fire when the frontmost app actually changes
-            guard bundleID != self.currentBundleID else { return }
+            // Only fire when the frontmost app actually changes.
+            // 忽略自身（设置窗口是独立进程，同样使用本 App 的 bundle id）：
+            // 打开设置时不应把「当前应用」变成 AutoSwitchInput 自己。
+            guard bundleID != self.currentBundleID,
+                  bundleID != Bundle.main.bundleIdentifier else { return }
             self.currentBundleID = bundleID
             self.currentAppName = name
 
-            // Debounce: wait 80ms to skip rapid app switching
-            self.debounceTimer?.invalidate()
-            self.debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: false) { [weak self] _ in
+            // Debounce: wait 80ms to skip rapid app switching.
+            // 用一次性 DispatchWorkItem 代替 Timer：不注册 RunLoop 源，切换时也不额外分配对象。
+            self.pendingChange?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                self?.pendingChange = nil
                 self?.onAppChange?(bundleID, name)
             }
+            self.pendingChange = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
         }
     }
 
@@ -49,6 +56,7 @@ class AppMonitor {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
             self.observer = nil
         }
-        debounceTimer?.invalidate()
+        pendingChange?.cancel()
+        pendingChange = nil
     }
 }

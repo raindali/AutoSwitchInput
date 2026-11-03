@@ -97,24 +97,12 @@ class InputMethodManager {
     }
 
     /// Returns the ID of the currently selected input source.
+    /// 直接问系统要「当前输入源」，不必枚举全部输入法（旧实现每次都要建一个 CFArray 并逐个比对）。
     func getCurrentInputSourceID() -> String? {
-        guard let unmanaged = TISCreateInputSourceList(nil, false) else { return nil }
-        let cfArray = unmanaged.takeRetainedValue()
-        let count = CFArrayGetCount(cfArray)
-
-        for i in 0..<count {
-            let rawPtr = CFArrayGetValueAtIndex(cfArray, i)!
-            let source = Unmanaged<TISInputSource>.fromOpaque(rawPtr).takeUnretainedValue()
-
-            if let selPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceIsSelected) {
-                let selected = Unmanaged<CFBoolean>.fromOpaque(selPtr).takeUnretainedValue()
-                if CFBooleanGetValue(selected) {
-                    guard let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else { return nil }
-                    return Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
-                }
-            }
-        }
-        return nil
+        guard let unmanaged = TISCopyCurrentKeyboardInputSource() else { return nil }
+        let source = unmanaged.takeRetainedValue()
+        guard let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else { return nil }
+        return Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
     }
 
     /// Returns the display name for a given input source ID.

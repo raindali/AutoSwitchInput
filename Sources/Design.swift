@@ -155,9 +155,17 @@ struct GlassRow<Content: View>: View {
 }
 
 /// 解析应用图标：按 Bundle ID 取真实图标，失败回退到系统 app 符号。
+/// 加一层缓存：规则列表每次重绘都会调用，旧实现每次都走 LaunchServices 查找 + 读盘。
+private var appIconCache: [String: NSImage] = [:]
+
 func appIcon(for bundleID: String) -> Image {
+    if let cached = appIconCache[bundleID] {
+        return Image(nsImage: cached)
+    }
     if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-        return Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
+        appIconCache[bundleID] = icon
+        return Image(nsImage: icon)
     }
     return Image(systemName: "app.fill")
 }

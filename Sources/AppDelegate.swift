@@ -1,53 +1,42 @@
 import AppKit
-import SwiftUI
 
-/// AppKit delegate: owns the status-bar item, the menu, and the settings window.
+/// AppKit delegate for the menu-bar process.
+///
+/// 这个进程只负责菜单栏图标、右键菜单和前台应用监听，**完全不碰 SwiftUI**。
+/// 设置窗口由 `AutoSwitchInputSettings`（同一二进制的副本，`--settings` 模式）承载，
+/// 关窗即退出，所以 SwiftUI 的视图图、图标/文字缓存不会滞留在常驻进程里。
 class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem?
+    /// 弹出菜单期间持有强引用，避免 tracking 循环结束后菜单提前释放。
     private var statusMenu: NSMenu?
-    private var settingsWindow: NSWindow?
-    private var settingsHostingController: NSHostingController<SettingsView>?
-    private var keyMonitor: Any?
+    /// 正在运行的设置窗口进程（同一时间只保留一个）。
+    private var settingsProcess: Process?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusBar()
         setupMonitor()
         RuleStore.shared.applyLaunchAtLogin() // 同步开机启动（登录项）状态
-        setupKeyMonitor() // ⌘W 关闭主窗口（不退出应用）
         // 纯菜单栏后台应用：启动后安静留在后台，不自动弹窗；
-        // 用户点击菜单栏图标或右键菜单「设置…」时再打开主窗口。
+        // 用户点击菜单栏图标或右键菜单「设置…」时再打开设置窗口。
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // 菜单栏进程退出时一并结束设置窗口进程，避免留下孤儿窗口。
+        settingsProcess?.terminate()
+        settingsProcess = nil
     }
 
     // 点击 Dock 图标时打开设置窗口（应用改为 regular 模式后生效）
     func applicationShouldHandleReopen(_ sender: NSApplication) -> Bool {
-        NSApp.activate(ignoringOtherApps: true)
         showSettings()
         return true
     }
 
-    // 部分 macOS 版本/场景下点击 Dock 走此分支，同样打开主窗口
+    // 无窗口的菜单栏应用：AppKit 在启动/被 LaunchServices 打开时会询问是否打开「未命名文稿」，
+    // 直接返回 false，避免启动即弹窗（也让首次内存占用停在 ~12 MB）。
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
-        showSettings()
-        return true
-    }
-
-    // MARK: - 键盘快捷键
-
-    /// ⌘W：关闭主窗口（与红圈按钮同效），应用不退出，可经 Dock 图标再次打开。
-    private func setupKeyMonitor() {
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.modifierFlags.contains(.command),
-               event.charactersIgnoringModifiers?.lowercased() == "w" {
-                // 仅当主窗口为 key 且未弹出 sheet（如"添加规则"）时关闭主窗口，
-                // 避免连带关掉 sheet 或误触。
-                if let win = self?.settingsWindow, win.isKeyWindow, win.attachedSheet == nil {
-                    win.performClose(nil)
-                    return nil
-                }
-            }
-            return event
-        }
+        return false
     }
 
     // MARK: - Status Bar
@@ -67,11 +56,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.action = #selector(statusBarClicked(_:))
             _ = button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
-        rebuildMenu()
     }
 
-    private func rebuildMenu() {
-        guard statusItem != nil else { return }
+    /// 菜单内容按需构建：只在右键真正弹出菜单时生成。
+    /// 旧实现把整份 NSMenu 在每次前台应用切换时重建一遍，纯属浪费（菜单此时并不可见）。
+    private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
         // Auto-switch toggle
@@ -119,7 +108,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         quit.target = self
         menu.addItem(quit)
 
-        statusMenu = menu
+        return menu
     }
 
     // MARK: - Monitor
@@ -127,7 +116,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupMonitor() {
         AppMonitor.shared.onAppChange = { [weak self] bundleID, appName in
             self?.handleAppChange(bundleID: bundleID, appName: appName)
-            self?.rebuildMenu()
         }
         AppMonitor.shared.start()
 
@@ -154,11 +142,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let isRightClick = event.type == .rightMouseUp || event.modifierFlags.contains(.control)
         if isRightClick {
-            rebuildMenu()
-            if let menu = statusMenu {
-                let point = NSPoint(x: 0, y: NSHeight(sender.bounds) + 4)
-                menu.popUp(positioning: nil, at: point, in: sender)
-            }
+            let menu = buildMenu()
+            statusMenu = menu
+            let point = NSPoint(x: 0, y: NSHeight(sender.bounds) + 4)
+            menu.popUp(positioning: nil, at: point, in: sender)
+            statusMenu = nil
         } else {
             showSettings()
         }
@@ -168,62 +156,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleAutoSwitch() {
         RuleStore.shared.autoSwitchEnabled.toggle()
-        rebuildMenu()
     }
 
+    /// 打开设置窗口：拉起独立的设置进程（已在运行则把它的窗口提到前台）。
     @objc private func showSettings() {
-        // 若窗口已被用户关闭（仍在内存中但不可见且未最小化），重建一个干净窗口，
-        // 避免旧窗口残留状态导致再次点击 Dock 图标无法显示主窗口。
-        if let w = settingsWindow, !w.isVisible {
-            if w.isMiniaturized {
-                w.deminiaturize(nil)
-                return
-            }
-            w.close()
-            settingsWindow = nil
-            settingsHostingController = nil
+        if let process = settingsProcess, process.isRunning {
+            NSRunningApplication(processIdentifier: process.processIdentifier)?.activate()
+            return
         }
 
-        if settingsWindow == nil {
-            let hosting = NSHostingController(rootView: SettingsView())
-            hosting.preferredContentSize = NSSize(width: 720, height: 540)
-            settingsHostingController = hosting
+        let executable = Bundle.main.executableURL
+        let helper = executable?.deletingLastPathComponent()
+            .appendingPathComponent("AutoSwitchInputSettings")
+        let target = helper.flatMap { FileManager.default.isExecutableFile(atPath: $0.path) ? $0 : nil }
+            ?? executable
+        guard let target else { return }
 
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 720, height: 540),
-                styleMask: [.titled, .closable, .resizable],
-                backing: .buffered,
-                defer: false
-            )
-            // 液态玻璃窗口（macOS 26 Tahoe）：
-            // 内容视图换成 NSVisualEffectView（.hudWindow 材质），SwiftUI 视图悬浮其上
-            if #available(macOS 26.0, *) {
-                window.isOpaque = false
-                window.backgroundColor = .clear
-                window.titlebarAppearsTransparent = true
-                window.styleMask.insert(.fullSizeContentView)
-
-                let effect = NSVisualEffectView()
-                effect.material = .hudWindow
-                effect.blendingMode = .behindWindow
-                effect.state = .active
-                window.contentView = effect
-
-                hosting.view.frame = effect.bounds
-                hosting.view.autoresizingMask = [.width, .height]
-                effect.addSubview(hosting.view)
-            } else {
-                window.contentViewController = hosting
-            }
-            window.setContentSize(NSSize(width: 720, height: 540))
-            window.contentMinSize = NSSize(width: 560, height: 420)
-            window.title = "AutoSwitchInput - 设置"
-            window.center()
-            window.isReleasedWhenClosed = false
-            settingsWindow = window
+        let process = Process()
+        process.executableURL = target
+        process.arguments = ["--settings"]
+        var environment = ProcessInfo.processInfo.environment
+        environment["ASI_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
+        process.environment = environment
+        process.terminationHandler = { [weak self] _ in
+            DispatchQueue.main.async { self?.settingsProcess = nil }
         }
-        NSApp.activate(ignoringOtherApps: true)
-        settingsWindow?.makeKeyAndOrderFront(nil)
+
+        do {
+            try process.run()
+            settingsProcess = process
+        } catch {
+            NSLog("[AutoSwitchInput] 无法启动设置窗口进程: \(error.localizedDescription)")
+        }
     }
 
     @objc private func quit() {
