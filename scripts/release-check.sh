@@ -71,7 +71,8 @@ case "$BINARY_STRINGS" in
         printf '%s\n' "$HITS" | head -5 | sed 's/^/      /'
         ;;
     *"$LOCAL_USER"*)
-        fail "二进制里出现了当前用户名（${LOCAL_USER}）"
+        # 只警告：CI runner 的用户名（runner）可能恰好是某些字符串的子串
+        warn "二进制里出现了当前用户名（${LOCAL_USER}），请确认不是路径泄露"
         ;;
     *)
         pass "二进制里没有本机路径 / 用户名"

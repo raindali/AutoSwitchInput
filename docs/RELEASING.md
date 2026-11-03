@@ -5,6 +5,42 @@
 
 ---
 
+## 0. 快速开始（fork 仓库）
+
+本仓库的发布流程已配好，第一次发布只需三步：
+
+**① 生成自签名证书**（本机执行一次）
+
+```bash
+P12_PASSWORD='给 p12 设的强密码' ./scripts/make-self-signed-cert.sh
+```
+
+**② 配置 3 个 Secrets**（仓库 Settings → Secrets and variables → Actions）
+
+| Secret | 值 |
+|---|---|
+| `SIGN_CERT_P12_BASE64` | 脚本输出的那一整行 base64 |
+| `SIGN_CERT_PASSWORD` | 上面的 `P12_PASSWORD` |
+| `KEYCHAIN_PASSWORD` | 随便一个新的强密码（CI 临时钥匙串用） |
+
+配置完成后删除本地私钥：`rm -rf dist/self-signed`
+
+**③ 打 tag 发布**
+
+```bash
+./scripts/release-check.sh          # 自检
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+Actions 页面能看到 `Release` 工作流；完成后 Releases 里会出现
+`AutoSwitchInput-1.1.0.zip`、`.dmg` 和 `SHA256SUMS.txt`。
+
+> Fork 仓库如果提示工作流被禁用：Settings → Actions → General →
+> 选择 **Allow all actions and reusable workflows**。
+
+---
+
 ## 1. 三种签名模式
 
 发布工作流会根据配置的 secrets 自动选择模式：
@@ -169,3 +205,23 @@ SIGN_IDENTITY='<SHA-1>' SIGN_KEYCHAIN='<keychain>' ./build.sh
 4. `SUFeedURL` 指向 GitHub Releases 的公开地址，不要用个人域名
 
 当前版本没有引入 Sparkle，保持零第三方依赖。
+
+---
+
+## 9. 发布检查清单
+
+发布前：
+
+- [ ] `Resources/Info.plist` 的 `CFBundleShortVersionString` / `CFBundleVersion` 已递增
+- [ ] `CHANGELOG.md` 已把「未发布」内容归到新版本下
+- [ ] `./scripts/release-check.sh` 全绿
+- [ ] `swift test` 全绿
+- [ ] 本地跑一遍：打开设置、改规则、切换 App 验证输入法跟随
+
+发布后：
+
+- [ ] Actions 里 `Release` 工作流成功
+- [ ] Releases 里三个产物齐全（zip / dmg / SHA256SUMS.txt）
+- [ ] 下载 zip 解压后能打开（未签名版本需手动放行）
+- [ ] `codesign -d -r- AutoSwitchInput.app` 显示的是预期身份
+- [ ] Release 说明里包含安装与授权步骤
