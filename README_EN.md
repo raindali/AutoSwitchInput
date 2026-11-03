@@ -94,7 +94,9 @@ AutoSwitchInput/
 │   │   ├── Models.swift              # AppRule, run mode
 │   │   ├── RuleStore.swift           # Persistence + cross-process sync + login item
 │   │   ├── InputMethodManager.swift  # Carbon TIS wrapper and filtering
-│   │   └── AppMonitor.swift          # Foreground app watching with debounce
+│   │   ├── AppMonitor.swift          # Foreground app watching with debounce
+│   │   ├── Localization.swift        # L10n helper
+│   │   └── Log.swift                 # os.Logger categories
 │   ├── AutoSwitchInputUI/            # SwiftUI settings UI
 │   │   ├── SettingsView.swift        # Main UI (Liquid Glass)
 │   │   └── Design.swift              # Design tokens and LiquidGlass modifier
@@ -106,6 +108,8 @@ AutoSwitchInput/
 │       └── SettingsAppDelegate.swift
 ├── Tests/AutoSwitchInputCoreTests/   # Unit tests (swift test)
 ├── Resources/
+│   ├── en.lproj/Localizable.strings      # English strings
+│   ├── zh-Hans.lproj/Localizable.strings # Simplified Chinese strings
 │   ├── Info.plist
 │   ├── AppIcon.icns            # Deep-gray keyboard app icon
 │   └── icon_src/gen_dock_icon.swift  # Icon generation script
@@ -119,7 +123,7 @@ AutoSwitchInput/
 
 ## Tech Stack
 
-Swift 6 · SwiftPM · SwiftUI · AppKit · Carbon TIS API · XCTest · ad-hoc signing · `SMAppService.mainApp` login item.
+Swift 6 · SwiftPM · SwiftUI · AppKit · Carbon TIS API · XCTest · en / zh-Hans localization · `os.Logger` · ad-hoc signing · `SMAppService.mainApp` login item.
 
 ---
 

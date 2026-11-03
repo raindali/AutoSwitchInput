@@ -27,6 +27,9 @@
 - **CI**：GitHub Actions 执行「构建 → 测试 → 打包」，并校验「菜单栏进程不链接 SwiftUI」这条架构约束，防止后续改动把常驻开销带回来。
 - **修复默认规则丢失**：首次启动播种的默认规则之前只存在于内存、从未落盘，用户不改任何设置的话下次启动会全部消失。
 - `build.sh` 改为 `swift build -c release` + 拷贝两个可执行文件，新增 `--no-install`（只构建不安装）。
+- **本地化**：界面文案全部抽到 `Resources/{en,zh-Hans}.lproj/Localizable.strings`（50 条），代码改用语义化 key + `L10n.t(...)`；系统语言为英文时菜单栏与设置窗口完整显示英文。新增 5 个测试校验两份表 key 一致、无空翻译、代码用到的 key 都存在、无残留 key、`%@` 占位符数量一致。
+- **统一日志**：`print` / `NSLog` 全部换成 `os.Logger`，按 `app / monitor / input-source / rules / settings` 分类，可用 `log stream --predicate 'subsystem == "com.qingwei.inputswitch"'` 过滤；输入法切换失败现在会记 error 级别日志。
+- `handleAppChange` 收敛为「算出目标输入法 → 切一次 → 记录结果」，去掉重复调用。
 
 ### 新增
 - 中文、英文分开的双版 README（`README.md` 中文、`README_EN.md` 英文）。

@@ -96,7 +96,9 @@ AutoSwitchInput/
 │   │   ├── Models.swift              # AppRule、运行模式
 │   │   ├── RuleStore.swift           # 规则持久化 + 跨进程同步 + 开机启动
 │   │   ├── InputMethodManager.swift  # Carbon TIS 封装与筛选逻辑
-│   │   └── AppMonitor.swift          # 前台 App 监听与防抖
+│   │   ├── AppMonitor.swift          # 前台 App 监听与防抖
+│   │   ├── Localization.swift        # L10n 本地化封装
+│   │   └── Log.swift                 # os.Logger 分类日志
 │   ├── AutoSwitchInputUI/            # SwiftUI 设置界面
 │   │   ├── SettingsView.swift        # 主界面（液态玻璃）
 │   │   └── Design.swift              # 设计令牌与 LiquidGlass 修饰符
@@ -108,6 +110,8 @@ AutoSwitchInput/
 │       └── SettingsAppDelegate.swift
 ├── Tests/AutoSwitchInputCoreTests/   # 单元测试（swift test）
 ├── Resources/
+│   ├── en.lproj/Localizable.strings      # 英文文案
+│   ├── zh-Hans.lproj/Localizable.strings # 中文文案
 │   ├── Info.plist
 │   ├── AppIcon.icns                  # 深灰键盘 Dock 图标
 │   └── icon_src/gen_dock_icon.swift  # 图标生成脚本
@@ -121,7 +125,7 @@ AutoSwitchInput/
 
 ## 技术栈
 
-Swift 6 · SwiftPM · SwiftUI · AppKit · Carbon TIS API · XCTest · ad-hoc 签名 · `SMAppService.mainApp` 登录项。
+Swift 6 · SwiftPM · SwiftUI · AppKit · Carbon TIS API · XCTest · en / zh-Hans 本地化 · `os.Logger` · ad-hoc 签名 · `SMAppService.mainApp` 登录项。
 
 ---
 

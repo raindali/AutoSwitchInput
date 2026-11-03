@@ -1,0 +1,63 @@
+/* AutoSwitchInput — 简体中文（源语言，值与 key 一致，显式列出便于翻译对照） */
+
+/* 状态栏图标 / 右键菜单 */
+"statusItem.accessibility" = "输入法自动切换";
+"menu.autoSwitch.on" = "自动切换：开";
+"menu.autoSwitch.off" = "自动切换：关";
+"menu.currentApp" = "当前应用：%@";
+"menu.ruleInputSource" = "规则输入法：%@";
+"menu.noRule" = "无匹配规则";
+"menu.currentInputSource" = "当前输入法：%@";
+"menu.settings" = "设置…";
+"menu.quit" = "退出";
+
+/* 设置窗口 */
+"settings.window.title" = "AutoSwitchInput - 设置";
+"settings.header.title" = "输入法自动切换";
+"settings.header.subtitle" = "按应用自动切换中英文与拼音输入";
+
+"settings.status.running" = "运行中";
+"settings.status.paused" = "已暂停";
+"settings.status.running.help" = "自动切换正在工作";
+"settings.status.paused.help" = "自动切换已关闭";
+
+/* 通用 */
+"settings.general.title" = "通用";
+"settings.autoSwitch.title" = "启用自动切换";
+"settings.autoSwitch.subtitle" = "切换应用时，按规则自动匹配输入法";
+"settings.launchAtLogin.title" = "开机启动";
+"settings.launchAtLogin.subtitle" = "登录系统后自动运行本应用";
+"settings.defaultInputSource.title" = "默认输入法";
+"settings.defaultInputSource.subtitle" = "无匹配规则时使用的输入法";
+"settings.defaultInputSource.none" = "不切换";
+
+/* 规则列表 */
+"settings.rules.title" = "应用规则";
+"settings.rules.add" = "添加";
+"settings.rules.disabledHint" = "自动切换已关闭，以下规则暂不生效";
+"settings.rules.empty.title" = "还没有应用规则";
+"settings.rules.empty.subtitle" = "为常用 App 添加规则：当它在前台时自动切换到指定输入法。";
+"settings.rules.empty.action" = "添加第一条规则";
+
+"settings.rule.delete" = "删除规则 %@";
+"settings.rule.deleteConfirm" = "再次点击确定删除 %@";
+"settings.rule.inputSource.help" = "点击下拉切换该应用的输入法";
+"settings.inputSource.choose" = "选择输入法";
+
+/* 添加规则 */
+"settings.add.title" = "添加应用规则";
+"settings.add.subtitle" = "选择应用并指定该应用激活时自动切换的输入法。";
+"settings.add.app.section" = "应用";
+"settings.add.bundleID.placeholder" = "Bundle Identifier（如 com.tencent.xinWeChat）";
+"settings.add.appName.placeholder" = "应用名称";
+"settings.add.app.none" = "未选择应用";
+"settings.add.app.hint" = "点击右侧「选择」从运行中的应用或浏览 .app";
+"settings.add.runningApps.section" = "运行中的应用";
+"settings.add.runningApps.empty" = "没有运行中的应用";
+"settings.add.browse" = "浏览 .app…";
+"settings.add.manual" = "手动输入 Bundle ID";
+"settings.add.choose" = "选择";
+"settings.add.inputSource.section" = "输入法";
+"settings.add.inputSource.empty" = "暂无可用输入法";
+"settings.add.cancel" = "取消";
+"settings.add.confirm" = "添加";

@@ -46,7 +46,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem?.button {
             // 标准模板图标：符合 macOS HIG（菜单栏扩展应使用模板图标），自动适配浅/深色菜单栏
-            if let image = NSImage(systemSymbolName: "keyboard", accessibilityDescription: "输入法自动切换") {
+            if let image = NSImage(systemSymbolName: "keyboard", accessibilityDescription: L10n.t("statusItem.accessibility")) {
                 image.isTemplate = true
                 button.image = image
             } else {
@@ -66,7 +66,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Auto-switch toggle
         let toggle = NSMenuItem(
-            title: "自动切换：\(RuleStore.shared.autoSwitchEnabled ? "开" : "关")",
+            title: L10n.t(RuleStore.shared.autoSwitchEnabled ? "menu.autoSwitch.on" : "menu.autoSwitch.off"),
             action: #selector(toggleAutoSwitch),
             keyEquivalent: ""
         )
@@ -77,22 +77,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Current app + input method info
         if let name = AppMonitor.shared.currentAppName {
-            let appItem = NSMenuItem(title: "当前应用：\(name)", action: nil, keyEquivalent: "")
+            let appItem = NSMenuItem(title: L10n.t("menu.currentApp", name), action: nil, keyEquivalent: "")
             appItem.isEnabled = false
             menu.addItem(appItem)
 
             if let rule = AppMonitor.shared.currentBundleID.flatMap({ RuleStore.shared.rule(for: $0) }) {
-                let ruleItem = NSMenuItem(title: "规则输入法：\(rule.inputSourceName)", action: nil, keyEquivalent: "")
+                let ruleItem = NSMenuItem(title: L10n.t("menu.ruleInputSource", rule.inputSourceName), action: nil, keyEquivalent: "")
                 ruleItem.isEnabled = false
                 menu.addItem(ruleItem)
             } else {
-                let noRule = NSMenuItem(title: "无匹配规则", action: nil, keyEquivalent: "")
+                let noRule = NSMenuItem(title: L10n.t("menu.noRule"), action: nil, keyEquivalent: "")
                 noRule.isEnabled = false
                 menu.addItem(noRule)
             }
 
             if let id = InputMethodManager.shared.getCurrentInputSourceID() {
-                let cur = NSMenuItem(title: "当前输入法：\(InputMethodManager.shared.name(for: id))",
+                let cur = NSMenuItem(title: L10n.t("menu.currentInputSource", InputMethodManager.shared.name(for: id)),
                                      action: nil, keyEquivalent: "")
                 cur.isEnabled = false
                 menu.addItem(cur)
@@ -101,11 +101,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let settings = NSMenuItem(title: "设置…", action: #selector(showSettings), keyEquivalent: ",")
+        let settings = NSMenuItem(title: L10n.t("menu.settings"), action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
 
-        let quit = NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q")
+        let quit = NSMenuItem(title: L10n.t("menu.quit"), action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
 
@@ -128,10 +128,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleAppChange(bundleID: String, appName: String) {
         guard RuleStore.shared.autoSwitchEnabled else { return }
-        if let rule = RuleStore.shared.rule(for: bundleID) {
-            InputMethodManager.shared.selectInputSource(id: rule.inputSourceID)
-        } else if let defaultID = RuleStore.shared.defaultInputSourceID {
-            InputMethodManager.shared.selectInputSource(id: defaultID)
+
+        let targetID = RuleStore.shared.rule(for: bundleID)?.inputSourceID
+            ?? RuleStore.shared.defaultInputSourceID
+        guard let targetID else { return }
+
+        if InputMethodManager.shared.selectInputSource(id: targetID) {
+            Log.inputSource.debug("已切换输入法: \(targetID, privacy: .public)")
+        } else {
+            Log.inputSource.error("切换输入法失败: \(targetID, privacy: .public)")
         }
     }
 
@@ -172,7 +177,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let helper = executable.deletingLastPathComponent()
             .appendingPathComponent("AutoSwitchInputSettings")
         guard FileManager.default.isExecutableFile(atPath: helper.path) else {
-            NSLog("[AutoSwitchInput] 找不到设置进程: %@", helper.path)
+            Log.app.error("找不到设置进程: \(helper.path, privacy: .public)")
             return
         }
 
@@ -189,8 +194,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try process.run()
             settingsProcess = process
+            Log.app.debug("已拉起设置进程 pid=\(process.processIdentifier)")
         } catch {
-            NSLog("[AutoSwitchInput] 无法启动设置窗口进程: \(error.localizedDescription)")
+            Log.app.error("无法启动设置窗口进程: \(error.localizedDescription, privacy: .public)")
         }
     }
 

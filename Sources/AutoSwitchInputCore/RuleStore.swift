@@ -94,6 +94,7 @@ public final class RuleStore: ObservableObject {
                       let pid = notification.userInfo?["pid"] as? Int,
                       pid != Int(ProcessInfo.processInfo.processIdentifier)
                 else { return }
+                Log.rules.debug("收到跨进程规则变更，重新读取")
                 self.reloadFromDefaults()
             }
         }
@@ -163,7 +164,7 @@ public final class RuleStore: ObservableObject {
                 }
             }
         } catch {
-            NSLog("[RuleStore] 开机启动设置失败: %@", error.localizedDescription)
+            Log.rules.error("开机启动设置失败: \(error.localizedDescription, privacy: .public)")
         }
     }
 

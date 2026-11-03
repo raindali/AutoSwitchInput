@@ -38,6 +38,12 @@ jobs:
           test -x AutoSwitchInput.app/Contents/MacOS/AutoSwitchInputSettings
           test -f AutoSwitchInput.app/Contents/Info.plist
 
+      - name: Verify localizations
+        run: |
+          set -euo pipefail
+          test -f AutoSwitchInput.app/Contents/Resources/en.lproj/Localizable.strings
+          test -f AutoSwitchInput.app/Contents/Resources/zh-Hans.lproj/Localizable.strings
+
       # 架构约束：常驻的菜单栏进程不应链接 SwiftUI，
       # 否则设置界面的视图图会重新变成常驻开销。
       - name: Verify menu-bar process does not link SwiftUI

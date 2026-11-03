@@ -47,12 +47,12 @@ public struct SettingsView: View {
     private var generalSection: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: Design.spacing4) {
-                Text("通用").font(.headline)
+                Text(L10n.t("settings.general.title")).font(.headline)
 
                 settingRow(
                     icon: "arrow.left.arrow.right",
-                    title: "启用自动切换",
-                    subtitle: "切换应用时，按规则自动匹配输入法"
+                    title: L10n.t("settings.autoSwitch.title"),
+                    subtitle: L10n.t("settings.autoSwitch.subtitle")
                 ) {
                     Toggle(isOn: $store.autoSwitchEnabled) { }
                         .toggleStyle(.switch)
@@ -64,8 +64,8 @@ public struct SettingsView: View {
 
                 settingRow(
                     icon: "power",
-                    title: "开机启动",
-                    subtitle: "登录系统后自动运行本应用"
+                    title: L10n.t("settings.launchAtLogin.title"),
+                    subtitle: L10n.t("settings.launchAtLogin.subtitle")
                 ) {
                     Toggle(isOn: $store.launchAtLogin) { }
                         .toggleStyle(.switch)
@@ -77,16 +77,16 @@ public struct SettingsView: View {
 
                 settingRow(
                     icon: "globe",
-                    title: "默认输入法",
-                    subtitle: "无匹配规则时使用的输入法"
+                    title: L10n.t("settings.defaultInputSource.title"),
+                    subtitle: L10n.t("settings.defaultInputSource.subtitle")
                 ) {
                     AutoInputMenu(
                         items: [
-                            AutoInputMenu.Item(name: "不切换", value: nil, isSelected: store.defaultInputSourceID == nil),
+                            AutoInputMenu.Item(name: L10n.t("settings.defaultInputSource.none"), value: nil, isSelected: store.defaultInputSourceID == nil),
                         ] + inputSources.map { source in
                             AutoInputMenu.Item(name: source.name, value: source.id, isSelected: store.defaultInputSourceID == source.id)
                         },
-                        selectedName: (store.defaultInputSourceID.flatMap { id in inputSources.first { $0.id == id }?.name }) ?? "不切换",
+                        selectedName: (store.defaultInputSourceID.flatMap { id in inputSources.first { $0.id == id }?.name }) ?? L10n.t("settings.defaultInputSource.none"),
                         fixedWidth: 170
                     ) { newID in
                         store.defaultInputSourceID = newID
@@ -122,7 +122,7 @@ public struct SettingsView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: Design.spacing4) {
                 HStack {
-                    Text("应用规则").font(.headline)
+                    Text(L10n.t("settings.rules.title")).font(.headline)
                     if !store.rules.isEmpty {
                         Text("\(store.rules.count)")
                             .font(.caption.weight(.semibold))
@@ -133,7 +133,7 @@ public struct SettingsView: View {
                     }
                     Spacer()
                     Button(action: { showingAddSheet = true }) {
-                        Label("添加", systemImage: "plus")
+                        Label(L10n.t("settings.rules.add"), systemImage: "plus")
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
@@ -144,7 +144,7 @@ public struct SettingsView: View {
                     HStack(spacing: 7) {
                         Image(systemName: "pause.circle.fill")
                             .foregroundStyle(Design.statusOff)
-                        Text("自动切换已关闭，以下规则暂不生效")
+                        Text(L10n.t("settings.rules.disabledHint"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -202,9 +202,9 @@ public struct SettingsView: View {
                         .font(.system(size: 23, weight: .medium))
                         .foregroundStyle(.tertiary)
                 )
-            Text("还没有应用规则")
+            Text(L10n.t("settings.rules.empty.title"))
                 .font(.headline)
-            Text("为常用 App 添加规则：当它在前台时自动切换到指定输入法。")
+            Text(L10n.t("settings.rules.empty.subtitle"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -212,7 +212,7 @@ public struct SettingsView: View {
             Button {
                 showingAddSheet = true
             } label: {
-                Label("添加第一条规则", systemImage: "plus")
+                Label(L10n.t("settings.rules.empty.action"), systemImage: "plus")
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
@@ -249,8 +249,8 @@ struct HeaderView: View {
                         .foregroundColor(.white)
                 )
             VStack(alignment: .leading, spacing: 2) {
-                Text("输入法自动切换").font(.title3.weight(.semibold))
-                Text("按应用自动切换中英文与拼音输入").font(.subheadline).foregroundStyle(.secondary)
+                Text(L10n.t("settings.header.title")).font(.title3.weight(.semibold))
+                Text(L10n.t("settings.header.subtitle")).font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer()
             statusChip
@@ -277,7 +277,7 @@ struct HeaderView: View {
             Circle()
                 .fill(store.autoSwitchEnabled ? Design.statusOn : Design.statusOff)
                 .frame(width: 7, height: 7)
-            Text(store.autoSwitchEnabled ? "运行中" : "已暂停")
+            Text(store.autoSwitchEnabled ? L10n.t("settings.status.running") : L10n.t("settings.status.paused"))
                 .font(.caption.weight(.medium))
                 .foregroundStyle(store.autoSwitchEnabled ? .primary : .secondary)
         }
@@ -291,7 +291,7 @@ struct HeaderView: View {
             Capsule()
                 .stroke(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 1)
         )
-        .help(store.autoSwitchEnabled ? "自动切换正在工作" : "自动切换已关闭")
+        .help(store.autoSwitchEnabled ? L10n.t("settings.status.running.help") : L10n.t("settings.status.paused.help"))
     }
 }
 
@@ -362,14 +362,14 @@ struct RuleRow: View {
                     )
                     .contentShape(Rectangle())
                     .animation(.easeOut(duration: 0.15), value: pendingDelete)
-                    .accessibilityLabel(pendingDelete ? "再次点击确定删除 \(rule.appName)" : "删除规则 \(rule.appName)")
-                    .help(pendingDelete ? "再次点击确定删除 \(rule.appName)" : "删除规则 \(rule.appName)")
+                    .accessibilityLabel(pendingDelete ? L10n.t("settings.rule.deleteConfirm", rule.appName) : L10n.t("settings.rule.delete", rule.appName))
+                    .help(pendingDelete ? L10n.t("settings.rule.deleteConfirm", rule.appName) : L10n.t("settings.rule.delete", rule.appName))
 
                     AutoInputMenu(
                         items: inputSources.map { source in
                             AutoInputMenu.Item(name: source.name, value: source.id, isSelected: selectedID == source.id)
                         },
-                        selectedName: inputSources.first { $0.id == selectedID }?.name ?? "选择输入法",
+                        selectedName: inputSources.first { $0.id == selectedID }?.name ?? L10n.t("settings.inputSource.choose"),
                         fixedWidth: 170
                     ) { newID in
                         if let newID, newID != selectedID {
@@ -378,7 +378,7 @@ struct RuleRow: View {
                         }
                     }
                 }
-                .help("点击下拉切换该应用的输入法")
+                .help(L10n.t("settings.rule.inputSource.help"))
             }
             .padding(Design.spacing3)
         }
@@ -439,8 +439,8 @@ struct AddRuleSheet: View {
     // MARK: - Sections
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("添加应用规则").font(.title3.weight(.semibold))
-            Text("选择应用并指定该应用激活时自动切换的输入法。").font(.subheadline).foregroundStyle(.secondary)
+            Text(L10n.t("settings.add.title")).font(.title3.weight(.semibold))
+            Text(L10n.t("settings.add.subtitle")).font(.subheadline).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Design.spacing5)
@@ -458,15 +458,15 @@ struct AddRuleSheet: View {
 
     private var appPickerSection: some View {
         VStack(alignment: .leading, spacing: Design.spacing2) {
-            sectionHeader(icon: "app.badge.checkmark", title: "应用")
+            sectionHeader(icon: "app.badge.checkmark", title: L10n.t("settings.add.app.section"))
 
             appRow
 
             if useManual {
                 VStack(spacing: 6) {
-                    TextField("Bundle Identifier（如 com.tencent.xinWeChat）", text: $manualBundleID)
+                    TextField(L10n.t("settings.add.bundleID.placeholder"), text: $manualBundleID)
                         .textFieldStyle(.roundedBorder)
-                    TextField("应用名称", text: $manualAppName)
+                    TextField(L10n.t("settings.add.appName.placeholder"), text: $manualAppName)
                         .textFieldStyle(.roundedBorder)
                 }
                 .padding(.top, 2)
@@ -483,11 +483,11 @@ struct AddRuleSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(hasAppSelected ? finalAppName : "未选择应用")
+                Text(hasAppSelected ? finalAppName : L10n.t("settings.add.app.none"))
                     .font(.body.weight(.medium))
                     .foregroundStyle(hasAppSelected ? .primary : .secondary)
                     .lineLimit(1)
-                Text(hasAppSelected ? finalBundleID : "点击右侧「选择」从运行中的应用或浏览 .app")
+                Text(hasAppSelected ? finalBundleID : L10n.t("settings.add.app.hint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -497,9 +497,9 @@ struct AddRuleSheet: View {
             Spacer()
 
             Menu {
-                Section("运行中的应用") {
+                Section(L10n.t("settings.add.runningApps.section")) {
                     if runningApps.isEmpty {
-                        Text("没有运行中的应用").foregroundStyle(.secondary)
+                        Text(L10n.t("settings.add.runningApps.empty")).foregroundStyle(.secondary)
                     } else {
                         ForEach(runningApps, id: \.bundleIdentifier) { app in
                             Button {
@@ -520,15 +520,15 @@ struct AddRuleSheet: View {
                 Button {
                     browseForApp()
                 } label: {
-                    Label("浏览 .app…", systemImage: "folder")
+                    Label(L10n.t("settings.add.browse"), systemImage: "folder")
                 }
                 Divider()
                 Toggle(isOn: $useManual) {
-                    Label("手动输入 Bundle ID", systemImage: "keyboard")
+                    Label(L10n.t("settings.add.manual"), systemImage: "keyboard")
                 }
             } label: {
                 HStack(spacing: 4) {
-                    Text("选择")
+                    Text(L10n.t("settings.add.choose"))
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.caption.weight(.semibold))
                 }
@@ -571,11 +571,11 @@ struct AddRuleSheet: View {
 
     private var inputMethodSection: some View {
         VStack(alignment: .leading, spacing: Design.spacing2) {
-            sectionHeader(icon: "globe", title: "输入法")
+            sectionHeader(icon: "globe", title: L10n.t("settings.add.inputSource.section"))
 
             Menu {
                 if inputSources.isEmpty {
-                    Text("暂无可用输入法").foregroundStyle(.secondary)
+                    Text(L10n.t("settings.add.inputSource.empty")).foregroundStyle(.secondary)
                 } else {
                     ForEach(inputSources) { source in
                         Button {
@@ -594,7 +594,7 @@ struct AddRuleSheet: View {
                     Image(systemName: "globe")
                         .foregroundStyle(Color.accentColor)
                         .frame(width: 16)
-                    Text(selectedInputSourceName.isEmpty ? "选择输入法" : selectedInputSourceName)
+                    Text(selectedInputSourceName.isEmpty ? L10n.t("settings.inputSource.choose") : selectedInputSourceName)
                         .foregroundStyle(selectedInputSourceName.isEmpty ? .secondary : .primary)
                     Spacer(minLength: 8)
                     Image(systemName: "chevron.up.chevron.down")
@@ -617,13 +617,13 @@ struct AddRuleSheet: View {
 
     private var footer: some View {
         HStack(spacing: Design.spacing3) {
-            Button("取消") { dismiss() }
+            Button(L10n.t("settings.add.cancel")) { dismiss() }
                 .keyboardShortcut(.cancelAction)
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
             Spacer()
             Button(action: addRule) {
-                Text("添加")
+                Text(L10n.t("settings.add.confirm"))
                     .frame(minWidth: 64)
             }
             .keyboardShortcut(.defaultAction)

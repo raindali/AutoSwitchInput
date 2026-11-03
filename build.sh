@@ -56,6 +56,13 @@ if [ -f "$RES_DIR/AppIcon.icns" ]; then
     echo "  -> App icon copied"
 fi
 
+# 本地化表（en / zh-Hans）：走标准 .lproj，Bundle.main 直接可用
+for lproj in "$RES_DIR"/*.lproj; do
+    [ -d "$lproj" ] || continue
+    cp -R "$lproj" "$BUNDLE_DIR/Contents/Resources/"
+    echo "  -> $(basename "$lproj") copied"
+done
+
 # --- 4. Code sign (ad-hoc) ---
 echo "[4/5] Code signing (ad-hoc)..."
 codesign --force --deep --sign - "$BUNDLE_DIR"

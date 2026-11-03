@@ -65,7 +65,7 @@ final class SettingsAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         }
         window.setContentSize(NSSize(width: 720, height: 540))
         window.contentMinSize = NSSize(width: 560, height: 420)
-        window.title = "AutoSwitchInput - 设置"
+        window.title = L10n.t("settings.window.title")
         window.center()
         window.isReleasedWhenClosed = false
         window.delegate = self

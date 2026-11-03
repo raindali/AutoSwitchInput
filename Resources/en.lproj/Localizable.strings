@@ -1,0 +1,63 @@
+/* AutoSwitchInput — English */
+
+/* 状态栏图标 / 右键菜单 */
+"statusItem.accessibility" = "Input source auto-switch";
+"menu.autoSwitch.on" = "Auto-Switch: On";
+"menu.autoSwitch.off" = "Auto-Switch: Off";
+"menu.currentApp" = "Current app: %@";
+"menu.ruleInputSource" = "Rule input source: %@";
+"menu.noRule" = "No matching rule";
+"menu.currentInputSource" = "Current input source: %@";
+"menu.settings" = "Settings…";
+"menu.quit" = "Quit";
+
+/* 设置窗口 */
+"settings.window.title" = "AutoSwitchInput - Settings";
+"settings.header.title" = "Input Source Auto-Switch";
+"settings.header.subtitle" = "Switch input sources per app";
+
+"settings.status.running" = "Running";
+"settings.status.paused" = "Paused";
+"settings.status.running.help" = "Auto-switch is active";
+"settings.status.paused.help" = "Auto-switch is off";
+
+/* 通用 */
+"settings.general.title" = "General";
+"settings.autoSwitch.title" = "Enable auto-switch";
+"settings.autoSwitch.subtitle" = "Match the input source by rule when you switch apps";
+"settings.launchAtLogin.title" = "Launch at login";
+"settings.launchAtLogin.subtitle" = "Start automatically after you log in";
+"settings.defaultInputSource.title" = "Default input source";
+"settings.defaultInputSource.subtitle" = "Used when no rule matches";
+"settings.defaultInputSource.none" = "Don't switch";
+
+/* 规则列表 */
+"settings.rules.title" = "App rules";
+"settings.rules.add" = "Add";
+"settings.rules.disabledHint" = "Auto-switch is off, so these rules are inactive";
+"settings.rules.empty.title" = "No app rules yet";
+"settings.rules.empty.subtitle" = "Add a rule for an app to switch to a specific input source while it's in front.";
+"settings.rules.empty.action" = "Add your first rule";
+
+"settings.rule.delete" = "Delete rule for %@";
+"settings.rule.deleteConfirm" = "Click again to delete %@";
+"settings.rule.inputSource.help" = "Click to change this app's input source";
+"settings.inputSource.choose" = "Choose input source";
+
+/* 添加规则 */
+"settings.add.title" = "Add app rule";
+"settings.add.subtitle" = "Pick an app and the input source to use while it's active.";
+"settings.add.app.section" = "App";
+"settings.add.bundleID.placeholder" = "Bundle Identifier (e.g. com.tencent.xinWeChat)";
+"settings.add.appName.placeholder" = "App name";
+"settings.add.app.none" = "No app selected";
+"settings.add.app.hint" = "Click \"Choose\" to pick a running app or browse for a .app";
+"settings.add.runningApps.section" = "Running apps";
+"settings.add.runningApps.empty" = "No running apps";
+"settings.add.browse" = "Browse .app…";
+"settings.add.manual" = "Enter Bundle ID manually";
+"settings.add.choose" = "Choose";
+"settings.add.inputSource.section" = "Input source";
+"settings.add.inputSource.empty" = "No input sources available";
+"settings.add.cancel" = "Cancel";
+"settings.add.confirm" = "Add";
