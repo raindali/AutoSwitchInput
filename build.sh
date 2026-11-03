@@ -63,9 +63,23 @@ for lproj in "$RES_DIR"/*.lproj; do
     echo "  -> $(basename "$lproj") copied"
 done
 
-# --- 4. Code sign (ad-hoc) ---
-echo "[4/5] Code signing (ad-hoc)..."
-codesign --force --deep --sign - "$BUNDLE_DIR"
+# --- 4. Code sign ---
+# 默认 ad-hoc（本地开发，无身份信息）；发布时通过环境变量指定 Developer ID：
+#   SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./build.sh
+# 公证要求 hardened runtime，因此非 ad-hoc 时自动加 --options runtime --timestamp。
+SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+echo "[4/5] Code signing (${SIGN_IDENTITY})..."
+if [ "$SIGN_IDENTITY" = "-" ]; then
+    codesign --force --deep --sign - "$BUNDLE_DIR"
+else
+    # 由内向外签：先签两个可执行文件，再签整个 bundle
+    for exe in "$BUNDLE_DIR/Contents/MacOS/$APP_NAME" "$BUNDLE_DIR/Contents/MacOS/$SETTINGS_NAME"; do
+        codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$exe"
+    done
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$BUNDLE_DIR"
+    codesign --verify --deep --strict "$BUNDLE_DIR"
+    echo "  -> Signed and verified"
+fi
 
 if [ "$DO_INSTALL" -eq 0 ]; then
     echo ""

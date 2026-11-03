@@ -33,6 +33,13 @@
 - **Swift 6 语言模式**：`swift-tools-version` 升到 6.0 并启用 `swiftLanguageModes: [.v6]`。`RuleStore` / `AppMonitor` / `InputMethodManager` / 两个 delegate 标注 `@MainActor`，全局可变的图标缓存收进 `@MainActor` 类型；通知回调在 `.main` 队列上显式 `MainActor.assumeIsolated`，`Process.terminationHandler` 回主 actor 清理。`-strict-concurrency=complete` 下零警告。
 - **UI 文件拆分**：`SettingsView.swift`（753 行）按职责拆成 `SettingsView` / `RuleRow` / `AddRuleSheet` / `AutoInputMenu` 四个文件。
 
+### 发布工程（加固版，未接入真实凭据）
+- **`build.sh` 支持 Developer ID**：`SIGN_IDENTITY` 环境变量指定证书时用 hardened runtime + 时间戳由内向外签名并校验；不设置时仍是 ad-hoc（零身份信息）。
+- **发布流水线** `.github/workflows/release.yml`：推送 `v*` tag 时校验 secrets → 签名 → Apple 公证 → 装订票据 → 打包 zip/dmg + SHA256 → 建 GitHub Release；手动触发只做「无凭据构建自检」并上传未签名产物。
+- **发布前自检** `scripts/release-check.sh`：检查仓库里没有凭据文件 / 私钥内容、工作区干净、二进制里没有本机路径与用户名、菜单栏进程不链接 SwiftUI、本地化资源齐全，并提示当前签名身份会公开哪些信息。
+- **凭据防泄露**：`.gitignore` 覆盖 `*.p12` / `*.cer` / `*.mobileprovision` / `ExportOptions.plist` / 私钥；CI 增加守卫，即使 `git add -f` 强推也会被拦下。
+- **`docs/RELEASING.md`**：一次性准备、secrets 清单、发布步骤、撤销方式，以及「签名必然公开证书姓名 / Team ID」的隐私说明与三条应对方案。
+
 ### 新增
 - 中文、英文分开的双版 README（`README.md` 中文、`README_EN.md` 英文）。
 

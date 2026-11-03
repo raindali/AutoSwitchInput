@@ -1,0 +1,156 @@
+name: Release
+
+# 只在打 tag 时真正发布；手动触发只做构建自检（不需要任何凭据）。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, Sign, Notarize
+    runs-on: macos-15
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Test
+        run: swift test
+
+      # 手动触发时只验证能打包，不碰签名与发布。
+      - name: Package (manual run)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          ./build.sh --no-install
+          ./scripts/release-check.sh
+
+      - name: Upload dry-run artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoSwitchInput-unsigned
+          path: AutoSwitchInput.app
+          retention-days: 7
+
+      # ---------- 以下步骤只在推送 tag 时执行 ----------
+
+      - name: Check required secrets
+        if: github.event_name == 'push'
+        env:
+          CERT: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          CERT_PW: ${{ secrets.MACOS_CERT_PASSWORD }}
+          KEYCHAIN_PW: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PW: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -z "${CERT:-}" ]        && missing+=("MACOS_CERT_P12_BASE64")
+          [ -z "${CERT_PW:-}" ]     && missing+=("MACOS_CERT_PASSWORD")
+          [ -z "${KEYCHAIN_PW:-}" ] && missing+=("KEYCHAIN_PASSWORD")
+          [ -z "${APPLE_ID:-}" ]    && missing+=("NOTARY_APPLE_ID")
+          [ -z "${TEAM_ID:-}" ]     && missing+=("NOTARY_TEAM_ID")
+          [ -z "${NOTARY_PW:-}" ]   && missing+=("NOTARY_PASSWORD")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::缺少 secrets: ${missing[*]} —— 配置方法见 docs/RELEASING.md"
+            exit 1
+          fi
+          echo "所需 secrets 均已配置"
+
+      - name: Import signing certificate
+        if: github.event_name == 'push'
+        env:
+          CERT: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          CERT_PW: ${{ secrets.MACOS_CERT_PASSWORD }}
+          KEYCHAIN_PW: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+          printf '%s' "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PW" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PW" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+
+      - name: Sign
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          # 用 here-string 而不是管道：pipefail 下 awk/head 提前退出会让
+          # security 收到 SIGPIPE，导致误判为没有证书。
+          IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN" || true)"
+          IDENTITY="$(grep -m1 -o 'Developer ID Application[^"]*' <<< "$IDENTITIES" || true)"
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::钥匙串里没有 Developer ID Application 证书"
+            exit 1
+          fi
+          # 不打印证书主体（其中含开发者姓名），只打印 Team ID
+          echo "签名身份已找到"
+          SIGN_IDENTITY="$IDENTITY" ./build.sh --no-install
+          codesign -dv --verbose=4 AutoSwitchInput.app 2>&1 | grep -E '^(Identifier|TeamIdentifier|Authority)=' | sed 's/^Authority=/Authority=<redacted>/'
+
+      - name: Notarize and staple
+        if: github.event_name == 'push'
+        env:
+          APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PW: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ditto -c -k --keepParent AutoSwitchInput.app dist/notarize.zip
+          xcrun notarytool submit dist/notarize.zip \
+            --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$NOTARY_PW" \
+            --wait --output-format json > dist/notarization.json
+          python3 -c 'import json,sys; s=json.load(open("dist/notarization.json"))["status"]; print("notarization:", s); sys.exit(0 if s=="Accepted" else 1)'
+          xcrun stapler staple AutoSwitchInput.app
+          xcrun stapler validate AutoSwitchInput.app
+          spctl -a -vv AutoSwitchInput.app
+          rm -f dist/notarize.zip
+
+      - name: Package
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          ditto -c -k --keepParent AutoSwitchInput.app "dist/AutoSwitchInput-$VERSION.zip"
+          hdiutil create -volname "AutoSwitchInput" -srcfolder AutoSwitchInput.app \
+            -ov -format UDZO "dist/AutoSwitchInput-$VERSION.dmg"
+          ( cd dist && shasum -a 256 ./*.zip ./*.dmg > SHA256SUMS.txt )
+          ls -lh dist
+
+      - name: Publish release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            dist/*.zip dist/*.dmg dist/SHA256SUMS.txt \
+            --title "$GITHUB_REF_NAME" --generate-notes
+
+      - name: Cleanup keychain
+        if: always() && github.event_name == 'push'
+        run: |
+          security delete-keychain "$RUNNER_TEMP/build.keychain-db" || true
+          rm -f "$RUNNER_TEMP/cert.p12"

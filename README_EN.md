@@ -60,6 +60,12 @@ open AutoSwitchInput.app
 swift test
 ```
 
+**Releasing (maintainers)**
+
+See [docs/RELEASING.md](./docs/RELEASING.md) for signing, notarization and CI
+secrets — including **what information becomes public** with a signed build.
+Run `./scripts/release-check.sh` before tagging.
+
 ---
 
 ## Usage
@@ -116,6 +122,8 @@ AutoSwitchInput/
 │   ├── Info.plist
 │   ├── AppIcon.icns            # Deep-gray keyboard app icon
 │   └── icon_src/gen_dock_icon.swift  # Icon generation script
+├── scripts/release-check.sh    # Pre-release checks (secrets / privacy / architecture)
+├── docs/RELEASING.md           # Release flow and privacy notes
 ├── build.sh                    # Package .app + deploy script
 ├── LICENSE                     # GPLv3
 ├── README.md                   # Chinese documentation

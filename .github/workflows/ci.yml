@@ -22,6 +22,19 @@ jobs:
       - name: Show toolchain
         run: swift --version
 
+      - name: Guard against committed secrets
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -E '\.(p12|pfx|cer|mobileprovision|provisionprofile|key|pem)$|(^|/)ExportOptions\.plist$|sparkle_private_key'; then
+            echo "::error::仓库里不应包含签名 / 公证凭据文件（见 docs/RELEASING.md）"
+            exit 1
+          fi
+          if git grep -I -q -E 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY'; then
+            echo "::error::仓库里出现了私钥内容"
+            exit 1
+          fi
+          echo "凭据检查通过"
+
       - name: Build (release)
         run: swift build -c release
 
@@ -46,15 +59,22 @@ jobs:
 
       # 架构约束：常驻的菜单栏进程不应链接 SwiftUI，
       # 否则设置界面的视图图会重新变成常驻开销。
+      # 注意：这里不用 `otool | grep -q`，pipefail 下 grep 提前退出会让
+      # otool 收到 SIGPIPE，导致断言假通过 / 假失败。
       - name: Verify menu-bar process does not link SwiftUI
         run: |
           set -euo pipefail
-          if otool -L AutoSwitchInput.app/Contents/MacOS/AutoSwitchInput | grep -q SwiftUI; then
-            echo "::error::菜单栏进程不应链接 SwiftUI"
-            exit 1
-          fi
+          LIBS="$(otool -L AutoSwitchInput.app/Contents/MacOS/AutoSwitchInput)"
+          case "$LIBS" in
+            *SwiftUI*) echo "::error::菜单栏进程不应链接 SwiftUI"; exit 1 ;;
+          esac
+          echo "菜单栏进程未链接 SwiftUI"
 
       - name: Verify settings process links SwiftUI
         run: |
           set -euo pipefail
-          otool -L AutoSwitchInput.app/Contents/MacOS/AutoSwitchInputSettings | grep -q SwiftUI
+          LIBS="$(otool -L AutoSwitchInput.app/Contents/MacOS/AutoSwitchInputSettings)"
+          case "$LIBS" in
+            *SwiftUI*) echo "设置进程已链接 SwiftUI" ;;
+            *) echo "::error::设置进程没有链接 SwiftUI"; exit 1 ;;
+          esac

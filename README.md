@@ -62,6 +62,11 @@ open AutoSwitchInput.app
 swift test
 ```
 
+**发布（维护者）**
+
+见 [docs/RELEASING.md](./docs/RELEASING.md)：签名 / 公证 / CI secrets 配置，
+以及**哪些信息会随 App 公开**。发布前先跑 `./scripts/release-check.sh`。
+
 ---
 
 ## 使用
@@ -118,6 +123,8 @@ AutoSwitchInput/
 │   ├── Info.plist
 │   ├── AppIcon.icns                  # 深灰键盘 Dock 图标
 │   └── icon_src/gen_dock_icon.swift  # 图标生成脚本
+├── scripts/release-check.sh          # 发布前自检（凭据泄露 / 产物隐私 / 架构约束）
+├── docs/RELEASING.md                 # 发布流程与隐私说明
 ├── build.sh                          # 打包 .app + 部署脚本
 ├── LICENSE                           # GPLv3
 ├── README.md                         # 中文文档
