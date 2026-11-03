@@ -78,8 +78,14 @@ jobs:
         if: steps.mode.outputs.mode != 'adhoc'
         env:
           MODE: ${{ steps.mode.outputs.mode }}
+          KEYCHAIN_PW: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           set -euo pipefail
+          # 每个 step 是新进程：重新解锁并加入搜索列表，否则 codesign 找不到身份
+          security unlock-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          security show-keychain-info "$KEYCHAIN" || true
+
           # 自签名证书通常未受信任，find-identity -v 不会列出它，
           # 因此不加 -v 并改用 SHA-1 哈希签名（build.sh 支持）。
           if [ "$MODE" = "developer-id" ]; then
@@ -102,6 +108,7 @@ jobs:
 
           if [ -z "$IDENTITY" ]; then
             echo "::error::钥匙串里没有可用的签名身份（mode=${MODE}）"
+            security find-identity "$KEYCHAIN" || true
             exit 1
           fi
           echo "找到签名身份（模式 ${MODE}）"
