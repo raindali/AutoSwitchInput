@@ -16,7 +16,7 @@ concurrency:
 jobs:
   release:
     name: Build & Package
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 40
 
     steps:
