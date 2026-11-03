@@ -101,10 +101,10 @@ jobs:
           done <<< "$IDENTITIES"
 
           if [ -z "$IDENTITY" ]; then
-            echo "::error::钥匙串里没有可用的签名身份（mode=$MODE）"
+            echo "::error::钥匙串里没有可用的签名身份（mode=${MODE}）"
             exit 1
           fi
-          echo "找到签名身份（模式 $MODE）"
+          echo "找到签名身份（模式 ${MODE}）"
 
           if [ "$MODE" = "developer-id" ]; then
             SIGN_IDENTITY="$IDENTITY" SIGN_KEYCHAIN="$KEYCHAIN" SIGN_HARDENED=1 ./build.sh --no-install
