@@ -166,15 +166,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let executable = Bundle.main.executableURL
-        let helper = executable?.deletingLastPathComponent()
+        guard let executable = Bundle.main.executableURL else { return }
+        // 设置界面是独立的可执行文件（AutoSwitchInputSettings），和菜单栏进程并排放在
+        // Contents/MacOS 下。缺失说明 .app 打包不完整，直接报错而不是误拉起自己。
+        let helper = executable.deletingLastPathComponent()
             .appendingPathComponent("AutoSwitchInputSettings")
-        let target = helper.flatMap { FileManager.default.isExecutableFile(atPath: $0.path) ? $0 : nil }
-            ?? executable
-        guard let target else { return }
+        guard FileManager.default.isExecutableFile(atPath: helper.path) else {
+            NSLog("[AutoSwitchInput] 找不到设置进程: %@", helper.path)
+            return
+        }
 
         let process = Process()
-        process.executableURL = target
+        process.executableURL = helper
         process.arguments = ["--settings"]
         var environment = ProcessInfo.processInfo.environment
         environment["ASI_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
