@@ -34,8 +34,9 @@
 - **UI 文件拆分**：`SettingsView.swift`（753 行）按职责拆成 `SettingsView` / `RuleRow` / `AddRuleSheet` / `AutoInputMenu` 四个文件。
 
 ### 发布工程（加固版，未接入真实凭据）
-- **`build.sh` 支持 Developer ID**：`SIGN_IDENTITY` 环境变量指定证书时用 hardened runtime + 时间戳由内向外签名并校验；不设置时仍是 ad-hoc（零身份信息）。
-- **发布流水线** `.github/workflows/release.yml`：推送 `v*` tag 时校验 secrets → 签名 → Apple 公证 → 装订票据 → 打包 zip/dmg + SHA256 → 建 GitHub Release；手动触发只做「无凭据构建自检」并上传未签名产物。
+- **`build.sh` 支持三种签名模式**：不设置 `SIGN_IDENTITY` 时是 ad-hoc（零身份信息）；设为证书 SHA-1 时用自签名证书签名（免费，签名身份稳定）；设为 Developer ID 名称并加 `SIGN_HARDENED=1` 时用 hardened runtime + 时间戳，满足公证要求。均由内向外签名并 `codesign --verify`。
+- **自签名证书方案**：新增 `scripts/make-self-signed-cert.sh`，一条命令生成代码签名证书并输出 GitHub Secret 内容；签名要求变成 `certificate leaf = H"…"`，用户升级后 TCC 授权不再重置。自签名证书无需 `sudo` 加入信任列表——CI 里用 SHA-1 指定身份即可签名。
+- **发布流水线** `.github/workflows/release.yml`：按配置的 secrets 自动选择 ad-hoc / 自签名 / Developer ID 三种模式；推送 `v*` tag 时签名 →（Developer ID 时）公证 + 装订 → 打包 zip/dmg + SHA256 → 建 GitHub Release，并按模式附上对应的安装说明；手动触发只做演练并上传产物。
 - **发布前自检** `scripts/release-check.sh`：检查仓库里没有凭据文件 / 私钥内容、工作区干净、二进制里没有本机路径与用户名、菜单栏进程不链接 SwiftUI、本地化资源齐全，并提示当前签名身份会公开哪些信息。
 - **凭据防泄露**：`.gitignore` 覆盖 `*.p12` / `*.cer` / `*.mobileprovision` / `ExportOptions.plist` / 私钥；CI 增加守卫，即使 `git add -f` 强推也会被拦下。
 - **`docs/RELEASING.md`**：一次性准备、secrets 清单、发布步骤、撤销方式，以及「签名必然公开证书姓名 / Team ID」的隐私说明与三条应对方案。

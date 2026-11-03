@@ -1,117 +1,170 @@
 # 发布流程与隐私说明
 
 本文档说明如何签名、公证并发布 AutoSwitchInput，以及**哪些信息会公开**。
-在配置任何凭据之前，请先读第 4 节。
+在配置任何凭据之前，请先读第 6 节。
 
 ---
 
-## 1. 一次性准备
+## 1. 三种签名模式
 
-需要 **Apple Developer Program**（个人 $99/年 或 组织账号）。
+发布工作流会根据配置的 secrets 自动选择模式：
 
-| 项目 | 从哪里拿 | 备注 |
-|---|---|---|
-| Developer ID Application 证书 | Apple Developer → Certificates | 导出为 `.p12` 并设置密码 |
-| Team ID | Apple Developer → Membership | 10 位，会公开在签名里 |
-| 公证凭据 | Apple ID + **App 专用密码** | 不要用主账号密码 |
-| GitHub Secrets | 见下表 | 只放 CI，绝不入库 |
+| 模式 | 需要什么 | Gatekeeper | 公证 | 签名身份稳定 | 适用 |
+|---|---|---|---|---|---|
+| **ad-hoc** | 什么都不配 | ❌ 拦截 | ❌ | ❌ 每次重编译都变 | 零配置，自用 |
+| **自签名** | 一张自签名证书（免费） | ❌ 拦截 | ❌ | ✅ 证书指纹 | 免费分发 |
+| **Developer ID** | 付费开发者账号 | ✅ 直接打开 | ✅ | ✅ Team ID | 正式分发 |
 
-### 需要在 GitHub 仓库配置的 Secrets
+「签名身份稳定」的含义：TCC 授权（输入监控 / 辅助功能）按签名身份记录。
+ad-hoc 签名的身份只有 CDHash，重新编译就变 → 用户每次升级都要重新授权；
+自签名和 Developer ID 的身份基于证书 → 升级后授权保留。
+
+---
+
+## 2. 一次性准备
+
+### 模式 A：ad-hoc（零配置）
+
+什么都不用做。推送 tag 就会构建并发布未签名版本，用户需手动放行。
+
+### 模式 B：自签名（免费，推荐）
+
+```bash
+P12_PASSWORD='给 p12 设的密码' ./scripts/make-self-signed-cert.sh
+```
+
+脚本会生成 `dist/self-signed/id.p12`，并打印需要填进 GitHub 的 secrets。
+在仓库 **Settings → Secrets and variables → Actions** 配置：
 
 | Secret 名称 | 内容 |
 |---|---|
-| `MACOS_CERT_P12_BASE64` | `base64 -i cert.p12 \| pbcopy` 的结果 |
-| `MACOS_CERT_PASSWORD` | 导出 `.p12` 时设置的密码 |
-| `KEYCHAIN_PASSWORD` | 临时钥匙串密码，随便生成一个强密码 |
+| `SIGN_CERT_P12_BASE64` | 脚本输出的那一整行 base64 |
+| `SIGN_CERT_PASSWORD` | 上面设置的 `P12_PASSWORD` |
+| `KEYCHAIN_PASSWORD` | 随便一个新的强密码（CI 临时钥匙串用） |
+
+上传后删除本地私钥：`rm -rf dist/self-signed`。
+
+### 模式 C：Developer ID（付费，$99/年）
+
+| Secret 名称 | 内容 |
+|---|---|
+| `SIGN_CERT_P12_BASE64` | Developer ID 证书的 base64 |
+| `SIGN_CERT_PASSWORD` | 导出 p12 时设置的密码 |
+| `KEYCHAIN_PASSWORD` | 临时钥匙串密码 |
 | `NOTARY_APPLE_ID` | 用于公证的 Apple ID |
 | `NOTARY_TEAM_ID` | Team ID |
-| `NOTARY_PASSWORD` | 上面 Apple ID 的 App 专用密码 |
+| `NOTARY_PASSWORD` | 上面 Apple ID 的 **App 专用密码** |
 
-> Fork 的 PR 拿不到这些 secrets，所以外部贡献者无法触发带签名的发布。
+只要 `NOTARY_PASSWORD` 存在就按 Developer ID 模式处理（含公证）。
 
 ---
 
-## 2. 发布步骤
+## 3. 发布步骤
 
 ```bash
-# 1. 改版本号
-#    Resources/Info.plist: CFBundleShortVersionString / CFBundleVersion
-
+# 1. 改版本号：Resources/Info.plist 的 CFBundleShortVersionString / CFBundleVersion
 # 2. 更新 CHANGELOG.md
-
-# 3. 自检（会检查凭据泄露、产物隐私、架构约束）
+# 3. 自检（凭据泄露 / 产物隐私 / 架构约束）
 ./scripts/release-check.sh
-
-# 4. 提交并打 tag
+# 4. 打 tag
 git commit -am "release: v1.2.3"
 git tag v1.2.3
 git push origin HEAD --tags
 ```
 
-推送 tag 后 `.github/workflows/release.yml` 会：
+`release.yml` 会：测试 → 自检 → 按模式签名 → （Developer ID 时）公证 → 打包 zip/dmg + SHA256 → 建 GitHub Release。
 
-1. 校验 secrets 是否齐全（缺失则直接失败并列出缺哪几个）
-2. `swift build -c release` + `swift test`
-3. 用 Developer ID 签名（hardened runtime + 时间戳）
-4. 提交 Apple 公证，`stapler` 装订票据
-5. 打包 `.zip` / `.dmg`，生成 SHA-256
-6. 创建 GitHub Release 并上传
+想先演练一次不发布：在 Actions 里手动 **Run workflow**，产物会作为 artifact 上传，不会创建 Release。
 
 发布后验证：
 
 ```bash
-spctl -a -vv AutoSwitchInput.app     # 应输出 accepted / source=Notarized Developer ID
-codesign -dv --verbose=4 AutoSwitchInput.app
+spctl -a -vv AutoSwitchInput.app          # Developer ID 应输出 accepted
+codesign -d -r- AutoSwitchInput.app       # 看签名要求
 ```
 
 ---
 
-## 3. 本地签名（不打 tag 时）
+## 4. 自签名证书的细节
+
+**它解决什么**
+
+- 给 App 一个**稳定的签名身份**：`identifier "com.qingwei.inputswitch" and certificate leaf = H"…"`
+- 用户升级新版本后，输入监控 / 辅助功能授权不会被重置
+
+**它不解决什么**
+
+- Gatekeeper 仍然拦截（证书不是 Apple 信任链的一部分），用户需手动放行
+- 不能公证
+- `spctl -a` 会返回 rejected，这是预期行为
+
+**为什么 CI 里要用 SHA-1 而不是证书名**
+
+自签名证书默认不受信任，`codesign -s "证书名"` 会报 `no identity found`。
+用 `security find-identity <keychain>` 拿到 SHA-1，再 `codesign -s <SHA-1> --keychain <keychain>`
+就能签（不需要 `sudo` 把证书加入信任列表）。
+
+**本地使用**
 
 ```bash
-SIGN_IDENTITY="Developer ID Application: 你的名字 (TEAMID)" ./build.sh
+security import dist/self-signed/id.p12 -k ~/Library/Keychains/login.keychain-db \
+  -P '<密码>' -T /usr/bin/codesign
+SIGN_IDENTITY='<证书 SHA-1>' ./build.sh
 ```
 
-不设置 `SIGN_IDENTITY` 时仍是 ad-hoc 签名（本地开发用，无身份信息）。
+---
+
+## 5. 本地签名
+
+```bash
+# Developer ID（需已导入钥匙串）
+SIGN_IDENTITY="Developer ID Application: 你的名字 (TEAMID)" SIGN_HARDENED=1 ./build.sh
+
+# 自签名
+SIGN_IDENTITY='<SHA-1>' SIGN_KEYCHAIN='<keychain>' ./build.sh
+
+# 不设置 → ad-hoc
+./build.sh
+```
 
 ---
 
-## 4. 哪些信息会公开（重要）
+## 6. 哪些信息会公开（重要）
 
-| 内容 | 是否公开 | 说明 |
-|---|---|---|
-| 证书主体（姓名 / 公司名） | ⚠️ **公开** | 每个下载到 App 的人都能 `codesign -dv` 看到 |
-| Team ID | ⚠️ 公开 | 可反查到开发者账号 |
-| 公证票据 | ✅ 干净 | 只有哈希，不含身份信息 |
-| 签名私钥 `.p12` | ✅ 不公开 | 只在 GitHub Secrets |
-| Apple ID / 专用密码 | ✅ 不公开 | 只在 GitHub Secrets |
-| 源码 / 二进制内容 | ✅ 干净 | `scripts/release-check.sh` 会检查本机路径与用户名 |
+| 内容 | ad-hoc | 自签名 | Developer ID |
+|---|---|---|---|
+| 证书主体 | 无 | **你自定义的名字** | ⚠️ 真实姓名 / 公司名 |
+| Team ID | 无 | 无 | ⚠️ 公开 |
+| 公证票据 | 无 | 无 | ✅ 只有哈希 |
+| 签名私钥 | 无 | 只在 Secrets | 只在 Secrets |
+| Apple ID / 专用密码 | 无 | 无 | 只在 Secrets |
 
-**结论：签名发布必然公开证书上的名字。** 如果不想公开真名，只能：
+**结论：**
 
-1. 使用**组织账号**（证书显示公司名，需要 D-U-N-S 编号）；或
-2. 保持 ad-hoc 发布，让用户自行编译；或
-3. 接受真名公开（多数开源 macOS 应用的做法）。
+- **ad-hoc**：零身份信息，但用户每次升级要重新授权。
+- **自签名**：证书名可以随便起（如 `AutoSwitchInput Dev`），**不暴露真名**，
+  同时获得稳定的签名身份。免费方案里隐私与体验最平衡。
+- **Developer ID**：必然公开证书上的真实姓名或公司名（个人账号无法用假名）。
+  不想暴露真名只能用组织账号（需 D-U-N-S）。
 
 ---
 
-## 5. 安全约定
+## 7. 安全约定
 
 - **绝不提交**：`*.p12`、`*.cer`、`*.mobileprovision`、`ExportOptions.plist`、任何私钥。
   `.gitignore` 已覆盖，CI 也会拦截。
-- CI 日志里不要 `echo` 任何 secret；GitHub 会自动掩码，但不要依赖它。
+- CI 日志里不要 `echo` 任何 secret。
 - 公证使用**独立 App 专用密码**，可随时在 Apple ID 页面吊销。
-- 证书泄露时：到 Apple Developer 吊销证书 → 重新签发 → 更新 secret。
-- 发布产物只上传 `.zip` / `.dmg`，**不要上传 `.xcarchive`**（内含完整本地路径与 dSYM）。
+- 证书泄露时：吊销证书 → 重新签发 → 更新 secret。
+- 发布产物只上传 `.zip` / `.dmg`，**不要上传 `.xcarchive`**（内含本地路径与 dSYM）。
+- 自签名私钥同样敏感：拿到它的人可以冒充你的 App 签名。
 
 ---
 
-## 6. 自动更新（Sparkle，可选，当前未启用）
-
-如果之后要加 Sparkle：
+## 8. 自动更新（Sparkle，可选，当前未启用）
 
 1. 生成 EdDSA 密钥对：`generate_keys`
-2. **公钥**写进 `Info.plist` 的 `SUPublicEDKey`（公开，没问题）
+2. **公钥**写进 `Info.plist` 的 `SUPublicEDKey`（公开）
 3. **私钥**存进 GitHub Secret `SPARKLE_PRIVATE_KEY`，绝不入库
 4. `SUFeedURL` 指向 GitHub Releases 的公开地址，不要用个人域名
 

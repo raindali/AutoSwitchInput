@@ -64,21 +64,37 @@ for lproj in "$RES_DIR"/*.lproj; do
 done
 
 # --- 4. Code sign ---
-# 默认 ad-hoc（本地开发，无身份信息）；发布时通过环境变量指定 Developer ID：
-#   SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./build.sh
-# 公证要求 hardened runtime，因此非 ad-hoc 时自动加 --options runtime --timestamp。
+# 三种模式：
+#   1) 不设 SIGN_IDENTITY            → ad-hoc（默认，无身份信息）
+#   2) 自签名证书（免费）            → SIGN_IDENTITY=<SHA-1> SIGN_KEYCHAIN=<keychain>
+#   3) Developer ID（需付费订阅）    → SIGN_IDENTITY="Developer ID Application: ..." SIGN_HARDENED=1
+#
+# 自签名证书若未受信任，codesign 按名字找不到身份，必须用 SHA-1 哈希指定；
+# 哈希可由 `security find-identity <keychain>` 取到。
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+SIGN_KEYCHAIN="${SIGN_KEYCHAIN:-}"
+SIGN_HARDENED="${SIGN_HARDENED:-0}"
+
 echo "[4/5] Code signing (${SIGN_IDENTITY})..."
 if [ "$SIGN_IDENTITY" = "-" ]; then
     codesign --force --deep --sign - "$BUNDLE_DIR"
 else
+    sign_args=(--force --sign "$SIGN_IDENTITY")
+    if [ -n "$SIGN_KEYCHAIN" ]; then
+        sign_args+=(--keychain "$SIGN_KEYCHAIN")
+    fi
+    # 公证要求 hardened runtime + 可信时间戳；自签名没有 TSA 信任链，默认不加
+    if [ "$SIGN_HARDENED" = "1" ]; then
+        sign_args+=(--options runtime --timestamp)
+    fi
     # 由内向外签：先签两个可执行文件，再签整个 bundle
     for exe in "$BUNDLE_DIR/Contents/MacOS/$APP_NAME" "$BUNDLE_DIR/Contents/MacOS/$SETTINGS_NAME"; do
-        codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$exe"
+        codesign "${sign_args[@]}" "$exe"
     done
-    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$BUNDLE_DIR"
+    codesign "${sign_args[@]}" "$BUNDLE_DIR"
     codesign --verify --deep --strict "$BUNDLE_DIR"
     echo "  -> Signed and verified"
+    codesign -d -r- "$BUNDLE_DIR" 2>&1 | sed -n 's/^\(# \)\{0,1\}designated => /  -> requirement: /p'
 fi
 
 if [ "$DO_INSTALL" -eq 0 ]; then

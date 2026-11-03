@@ -66,6 +66,10 @@ See [docs/RELEASING.md](./docs/RELEASING.md) for signing, notarization and CI
 secrets — including **what information becomes public** with a signed build.
 Run `./scripts/release-check.sh` before tagging.
 
+No paid developer account is required: with no secrets the build is ad-hoc; with a
+self-signed certificate (`./scripts/make-self-signed-cert.sh`) the signing identity
+stays stable across updates, so users don't have to re-grant permissions.
+
 ---
 
 ## Usage

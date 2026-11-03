@@ -67,6 +67,9 @@ swift test
 见 [docs/RELEASING.md](./docs/RELEASING.md)：签名 / 公证 / CI secrets 配置，
 以及**哪些信息会随 App 公开**。发布前先跑 `./scripts/release-check.sh`。
 
+没有付费开发者账号也能发布：不配任何 secret 是 ad-hoc 版本；配一张自签名证书
+（`./scripts/make-self-signed-cert.sh`）可获得稳定的签名身份，升级后不用重新授权。
+
 ---
 
 ## 使用

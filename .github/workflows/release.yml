@@ -1,6 +1,6 @@
 name: Release
 
-# 只在打 tag 时真正发布；手动触发只做构建自检（不需要任何凭据）。
+# 推送 v* tag 时发布；手动触发只做「构建 + 可选签名」演练，不创建 Release。
 on:
   push:
     tags: ['v*']
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   release:
-    name: Build, Sign, Notarize
+    name: Build & Package
     runs-on: macos-15
     timeout-minutes: 40
 
@@ -27,56 +27,38 @@ jobs:
       - name: Show toolchain
         run: swift --version
 
+      # ---------- 签名模式 ----------
+      # 1) 配了签名证书 + 公证凭据 → Developer ID（需付费订阅）
+      # 2) 只配了签名证书           → 自签名（免费，签名稳定但 Gatekeeper 仍会拦）
+      # 3) 什么都没配               → ad-hoc（免费，零配置）
+      - name: Detect signing mode
+        id: mode
+        env:
+          CERT: ${{ secrets.SIGN_CERT_P12_BASE64 }}
+          NOTARY: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "${CERT:-}" ] && [ -n "${NOTARY:-}" ]; then
+            echo "mode=developer-id" >> "$GITHUB_OUTPUT"
+          elif [ -n "${CERT:-}" ]; then
+            echo "mode=self-signed" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=adhoc" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Test
         run: swift test
 
-      # 手动触发时只验证能打包，不碰签名与发布。
-      - name: Package (manual run)
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          set -euo pipefail
-          ./build.sh --no-install
-          ./scripts/release-check.sh
+      # 先跑自检（凭据泄露 / 产物隐私 / 架构约束），此时还是 ad-hoc 构建
+      - name: Pre-release checks
+        run: ./scripts/release-check.sh
 
-      - name: Upload dry-run artifact
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
-        with:
-          name: AutoSwitchInput-unsigned
-          path: AutoSwitchInput.app
-          retention-days: 7
-
-      # ---------- 以下步骤只在推送 tag 时执行 ----------
-
-      - name: Check required secrets
-        if: github.event_name == 'push'
-        env:
-          CERT: ${{ secrets.MACOS_CERT_P12_BASE64 }}
-          CERT_PW: ${{ secrets.MACOS_CERT_PASSWORD }}
-          KEYCHAIN_PW: ${{ secrets.KEYCHAIN_PASSWORD }}
-          APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
-          TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
-          NOTARY_PW: ${{ secrets.NOTARY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          missing=()
-          [ -z "${CERT:-}" ]        && missing+=("MACOS_CERT_P12_BASE64")
-          [ -z "${CERT_PW:-}" ]     && missing+=("MACOS_CERT_PASSWORD")
-          [ -z "${KEYCHAIN_PW:-}" ] && missing+=("KEYCHAIN_PASSWORD")
-          [ -z "${APPLE_ID:-}" ]    && missing+=("NOTARY_APPLE_ID")
-          [ -z "${TEAM_ID:-}" ]     && missing+=("NOTARY_TEAM_ID")
-          [ -z "${NOTARY_PW:-}" ]   && missing+=("NOTARY_PASSWORD")
-          if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::缺少 secrets: ${missing[*]} —— 配置方法见 docs/RELEASING.md"
-            exit 1
-          fi
-          echo "所需 secrets 均已配置"
-
+      # ---------- 导入证书 ----------
       - name: Import signing certificate
-        if: github.event_name == 'push'
+        if: steps.mode.outputs.mode != 'adhoc'
         env:
-          CERT: ${{ secrets.MACOS_CERT_P12_BASE64 }}
-          CERT_PW: ${{ secrets.MACOS_CERT_PASSWORD }}
+          CERT: ${{ secrets.SIGN_CERT_P12_BASE64 }}
+          CERT_PW: ${{ secrets.SIGN_CERT_PASSWORD }}
           KEYCHAIN_PW: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           set -euo pipefail
@@ -87,29 +69,52 @@ jobs:
           printf '%s' "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
           security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PW" -A -t cert -f pkcs12 -k "$KEYCHAIN"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PW" "$KEYCHAIN"
-          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
           rm -f "$RUNNER_TEMP/cert.p12"
           echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          echo "证书已导入临时钥匙串"
 
+      # ---------- 签名 ----------
       - name: Sign
-        if: github.event_name == 'push'
+        if: steps.mode.outputs.mode != 'adhoc'
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
         run: |
           set -euo pipefail
-          # 用 here-string 而不是管道：pipefail 下 awk/head 提前退出会让
-          # security 收到 SIGPIPE，导致误判为没有证书。
-          IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN" || true)"
-          IDENTITY="$(grep -m1 -o 'Developer ID Application[^"]*' <<< "$IDENTITIES" || true)"
+          # 自签名证书通常未受信任，find-identity -v 不会列出它，
+          # 因此不加 -v 并改用 SHA-1 哈希签名（build.sh 支持）。
+          if [ "$MODE" = "developer-id" ]; then
+            IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN" || true)"
+          else
+            IDENTITIES="$(security find-identity "$KEYCHAIN" || true)"
+          fi
+
+          IDENTITY=""
+          while IFS= read -r line; do
+            if [[ "$line" =~ ^[[:space:]]*[0-9]+\)[[:space:]]+([0-9A-Fa-f]{40})[[:space:]]\"(.*)\" ]]; then
+              if [ "$MODE" = "developer-id" ]; then
+                IDENTITY="${BASH_REMATCH[2]}"
+              else
+                IDENTITY="${BASH_REMATCH[1]}"
+              fi
+              break
+            fi
+          done <<< "$IDENTITIES"
+
           if [ -z "$IDENTITY" ]; then
-            echo "::error::钥匙串里没有 Developer ID Application 证书"
+            echo "::error::钥匙串里没有可用的签名身份（mode=$MODE）"
             exit 1
           fi
-          # 不打印证书主体（其中含开发者姓名），只打印 Team ID
-          echo "签名身份已找到"
-          SIGN_IDENTITY="$IDENTITY" ./build.sh --no-install
-          codesign -dv --verbose=4 AutoSwitchInput.app 2>&1 | grep -E '^(Identifier|TeamIdentifier|Authority)=' | sed 's/^Authority=/Authority=<redacted>/'
+          echo "找到签名身份（模式 $MODE）"
 
+          if [ "$MODE" = "developer-id" ]; then
+            SIGN_IDENTITY="$IDENTITY" SIGN_KEYCHAIN="$KEYCHAIN" SIGN_HARDENED=1 ./build.sh --no-install
+          else
+            SIGN_IDENTITY="$IDENTITY" SIGN_KEYCHAIN="$KEYCHAIN" ./build.sh --no-install
+          fi
+
+      # ---------- 公证（仅 Developer ID）----------
       - name: Notarize and staple
-        if: github.event_name == 'push'
+        if: steps.mode.outputs.mode == 'developer-id'
         env:
           APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
           TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
@@ -127,18 +132,31 @@ jobs:
           spctl -a -vv AutoSwitchInput.app
           rm -f dist/notarize.zip
 
+      # ---------- 打包 ----------
       - name: Package
-        if: github.event_name == 'push'
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' AutoSwitchInput.app/Contents/Info.plist)"
+          fi
           mkdir -p dist
           ditto -c -k --keepParent AutoSwitchInput.app "dist/AutoSwitchInput-$VERSION.zip"
           hdiutil create -volname "AutoSwitchInput" -srcfolder AutoSwitchInput.app \
             -ov -format UDZO "dist/AutoSwitchInput-$VERSION.dmg"
           ( cd dist && shasum -a 256 ./*.zip ./*.dmg > SHA256SUMS.txt )
+
+          # 安装说明放在仓库里，避免 YAML 里嵌 heredoc 的缩进坑
+          if [ "$MODE" = "developer-id" ]; then
+            cp docs/RELEASE_NOTES.md dist/RELEASE_NOTES.md
+          else
+            cp docs/RELEASE_NOTES_UNSIGNED.md dist/RELEASE_NOTES.md
+          fi
           ls -lh dist
 
+      # ---------- 发布 ----------
       - name: Publish release
         if: github.event_name == 'push'
         env:
@@ -147,10 +165,19 @@ jobs:
           set -euo pipefail
           gh release create "$GITHUB_REF_NAME" \
             dist/*.zip dist/*.dmg dist/SHA256SUMS.txt \
-            --title "$GITHUB_REF_NAME" --generate-notes
+            --title "$GITHUB_REF_NAME" \
+            --notes-file dist/RELEASE_NOTES.md
+
+      - name: Upload dry-run artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoSwitchInput-${{ steps.mode.outputs.mode }}
+          path: dist/*
+          retention-days: 7
 
       - name: Cleanup keychain
-        if: always() && github.event_name == 'push'
+        if: always() && steps.mode.outputs.mode != 'adhoc'
         run: |
           security delete-keychain "$RUNNER_TEMP/build.keychain-db" || true
           rm -f "$RUNNER_TEMP/cert.p12"

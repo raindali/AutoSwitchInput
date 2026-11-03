@@ -71,7 +71,7 @@ case "$BINARY_STRINGS" in
         printf '%s\n' "$HITS" | head -5 | sed 's/^/      /'
         ;;
     *"$LOCAL_USER"*)
-        fail "二进制里出现了当前用户名（$LOCAL_USER）"
+        fail "二进制里出现了当前用户名（${LOCAL_USER}）"
         ;;
     *)
         pass "二进制里没有本机路径 / 用户名"
