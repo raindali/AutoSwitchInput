@@ -2,56 +2,55 @@
 set -euo pipefail
 
 # ============================================
-# Build script for AutoSwitchInputMethod
-# Compiles Swift sources into a macOS .app bundle,
-# then deploys a copy to /Applications (keeps the
-# install location in sync with the workspace build).
+# Build script for AutoSwitchInput
+# Builds with SwiftPM, assembles a macOS .app
+# bundle (menu bar app + settings helper),
+# then deploys a copy to /Applications.
+#
+# 用法：
+#   ./build.sh            # 构建并安装到 /Applications
+#   ./build.sh --no-install  # 只构建，不安装
 # ============================================
 
 APP_NAME="AutoSwitchInput"
+SETTINGS_NAME="${APP_NAME}Settings"
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SRC_DIR="$PROJECT_DIR/Sources"
 RES_DIR="$PROJECT_DIR/Resources"
 BUNDLE_DIR="$PROJECT_DIR/$APP_NAME.app"
 INSTALL_PATH="/Applications/$APP_NAME.app"
+DO_INSTALL=1
+
+if [[ "${1:-}" == "--no-install" ]]; then
+    DO_INSTALL=0
+fi
 
 echo "=========================================="
 echo "  Building $APP_NAME"
 echo "=========================================="
 
-# --- 1. Prepare bundle structure ---
-echo "[1/5] Creating .app bundle structure..."
+# --- 1. Compile (SwiftPM) ---
+echo "[1/5] Compiling (swift build -c release)..."
+cd "$PROJECT_DIR"
+swift build -c release
+BIN_DIR="$(swift build -c release --show-bin-path)"
+echo "  -> Compiled successfully ($BIN_DIR)"
+
+# --- 2. Prepare bundle structure ---
+echo "[2/5] Creating .app bundle structure..."
 rm -rf "$BUNDLE_DIR"
 mkdir -p "$BUNDLE_DIR/Contents/MacOS"
 mkdir -p "$BUNDLE_DIR/Contents/Resources"
 
-# --- 2. Compile ---
-echo "[2/5] Compiling Swift sources..."
-SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
-swiftc \
-    -target arm64-apple-macosx14.0 \
-    -sdk "$SDK_PATH" \
-    -framework Cocoa \
-    -framework Carbon \
-    -framework SwiftUI \
-    -framework ServiceManagement \
-    -O \
-    "$SRC_DIR"/*.swift \
-    -o "$BUNDLE_DIR/Contents/MacOS/$APP_NAME"
+# 菜单栏进程与设置进程是两个独立可执行文件：
+# 前者只链接 Core（不含 SwiftUI），后者才链接 SwiftUI，关窗即退出。
+cp "$BIN_DIR/$APP_NAME" "$BUNDLE_DIR/Contents/MacOS/$APP_NAME"
+cp "$BIN_DIR/$SETTINGS_NAME" "$BUNDLE_DIR/Contents/MacOS/$SETTINGS_NAME"
+echo "  -> Executables copied"
 
-echo "  -> Compiled successfully"
-
-# --- 2b. Duplicate the binary as the settings-window process ---
-# 设置窗口跑在独立进程里（同一二进制 + --settings），关窗即退出；
-# 这样常驻的菜单栏进程无需承载 SwiftUI 的视图图与渲染缓存。
-cp "$BUNDLE_DIR/Contents/MacOS/$APP_NAME" "$BUNDLE_DIR/Contents/MacOS/${APP_NAME}Settings"
-echo "  -> Settings helper created"
-
-# --- 3. Copy Info.plist ---
+# --- 3. Copy Info.plist / icon ---
 echo "[3/5] Copying Info.plist..."
 cp "$RES_DIR/Info.plist" "$BUNDLE_DIR/Contents/Info.plist"
 
-# --- 3b. Copy app icon (if present) ---
 if [ -f "$RES_DIR/AppIcon.icns" ]; then
     cp "$RES_DIR/AppIcon.icns" "$BUNDLE_DIR/Contents/Resources/AppIcon.icns"
     echo "  -> App icon copied"
@@ -60,6 +59,15 @@ fi
 # --- 4. Code sign (ad-hoc) ---
 echo "[4/5] Code signing (ad-hoc)..."
 codesign --force --deep --sign - "$BUNDLE_DIR"
+
+if [ "$DO_INSTALL" -eq 0 ]; then
+    echo ""
+    echo "=========================================="
+    echo "  Build complete (not installed)"
+    echo "  Output: $BUNDLE_DIR"
+    echo "=========================================="
+    exit 0
+fi
 
 # --- 5. Deploy to /Applications ---
 echo "[5/5] Deploying to /Applications..."
@@ -70,6 +78,7 @@ if [ -d "$INSTALL_PATH" ]; then
         pkill -f "$INSTALL_PATH/Contents/MacOS/$APP_NAME"
         sleep 0.5
     fi
+    pkill -f "$INSTALL_PATH/Contents/MacOS/$SETTINGS_NAME" >/dev/null 2>&1 || true
     rm -rf "$INSTALL_PATH"
 fi
 cp -R "$BUNDLE_DIR" "$INSTALL_PATH"

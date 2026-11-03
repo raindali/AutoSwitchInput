@@ -9,7 +9,7 @@
 ## [未发布 / Unreleased]
 
 ### 性能 / 内存
-- **设置窗口拆分为独立进程**：菜单栏进程只负责状态栏图标、右键菜单与前台应用监听，**不再使用 SwiftUI**；点开设置时以 `--settings` 拉起 `AutoSwitchInputSettings`（同一二进制的副本），关窗即退出。这样「开过一次设置」不会再把 SwiftUI 的视图图与渲染缓存（约 20 MB）永久留在常驻进程里。实测常驻进程稳定在 **12 MB**，设置进程 32 MB 且随窗口关闭消失。
+- **设置窗口拆分为独立进程**：菜单栏进程只负责状态栏图标、右键菜单与前台应用监听，**不链接 SwiftUI**；点开设置时拉起独立可执行文件 `AutoSwitchInputSettings`，关窗即退出。这样「开过一次设置」不会再把 SwiftUI 的视图图与渲染缓存（约 20 MB）永久留在常驻进程里。实测常驻进程稳定在 **12 MB**，设置进程 32 MB 且随窗口关闭消失。
 - **规则跨进程同步**：两个进程通过 `DistributedNotificationCenter` + `UserDefaults` 双向同步规则与开关状态，设置里改了规则，菜单栏进程立即生效（登录项注册仍由菜单栏进程负责）。
 - **修复启动即弹窗导致的内存占用**：`applicationShouldOpenUntitledFile` 之前会调用 `showSettings()`，而 AppKit 在「无文稿应用」被启动时会询问该方法，于是应用一启动就建好了整个设置窗口。改为返回 `false` 后，菜单栏常驻进程空闲内存从 **~33 MB 降到 ~12 MB**。
 - **关闭设置窗口即释放全部 SwiftUI 资源**：设置进程随窗口关闭直接退出，AttributeGraph / DisplayList / 图标与文字缓存一并还给系统，重新打开时再按需拉起。
@@ -20,6 +20,13 @@
 - **应用图标加缓存**：规则行重绘时不再反复走 LaunchServices 查找 + 读盘。
 - **「添加规则」的运行中应用列表改为打开时抓一次快照**：不再每次重绘都枚举全部进程。
 - **前台应用切换防抖改用一次性 `DispatchWorkItem`**：不再注册 `RunLoop` Timer 源。
+
+### 工程化
+- **SwiftPM 化**：拆成 `AutoSwitchInputCore`（规则/输入源/监听，纯逻辑）、`AutoSwitchInputUI`（SwiftUI 界面）、`AutoSwitchInput`（菜单栏进程）、`AutoSwitchInputSettings`（设置进程）四个 target。菜单栏二进制不再链接 SwiftUI，体积 1.05 MB → **238 KB**。
+- **单元测试**：新增 23 个 XCTest，覆盖规则持久化与跨进程同步、输入源筛选（类别/启用/父容器/去重/排序）、前台应用防抖；`swift test` 可直接运行。
+- **CI**：GitHub Actions 执行「构建 → 测试 → 打包」，并校验「菜单栏进程不链接 SwiftUI」这条架构约束，防止后续改动把常驻开销带回来。
+- **修复默认规则丢失**：首次启动播种的默认规则之前只存在于内存、从未落盘，用户不改任何设置的话下次启动会全部消失。
+- `build.sh` 改为 `swift build -c release` + 拷贝两个可执行文件，新增 `--no-install`（只构建不安装）。
 
 ### 新增
 - 中文、英文分开的双版 README（`README.md` 中文、`README_EN.md` 英文）。

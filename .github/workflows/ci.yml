@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Build (release)
+        run: swift build -c release
+
+      - name: Test
+        run: swift test
+
+      - name: Package .app
+        run: ./build.sh --no-install
+
+      - name: Verify bundle layout
+        run: |
+          set -euo pipefail
+          test -x AutoSwitchInput.app/Contents/MacOS/AutoSwitchInput
+          test -x AutoSwitchInput.app/Contents/MacOS/AutoSwitchInputSettings
+          test -f AutoSwitchInput.app/Contents/Info.plist
+
+      # 架构约束：常驻的菜单栏进程不应链接 SwiftUI，
+      # 否则设置界面的视图图会重新变成常驻开销。
+      - name: Verify menu-bar process does not link SwiftUI
+        run: |
+          set -euo pipefail
+          if otool -L AutoSwitchInput.app/Contents/MacOS/AutoSwitchInput | grep -q SwiftUI; then
+            echo "::error::菜单栏进程不应链接 SwiftUI"
+            exit 1
+          fi
+
+      - name: Verify settings process links SwiftUI
+        run: |
+          set -euo pipefail
+          otool -L AutoSwitchInput.app/Contents/MacOS/AutoSwitchInputSettings | grep -q SwiftUI

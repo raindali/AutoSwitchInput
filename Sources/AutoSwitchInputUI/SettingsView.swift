@@ -1,10 +1,14 @@
 import SwiftUI
 import AppKit
+import AutoSwitchInputCore
 
 // MARK: - Settings Window (Redesigned)
 
-struct SettingsView: View {
+public struct SettingsView: View {
     @ObservedObject private var store = RuleStore.shared
+
+    public init() {}
+
     @State private var showingAddSheet = false
     @State private var inputSources: [InputMethodManager.InputSource] = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -12,7 +16,7 @@ struct SettingsView: View {
     /// 结构过渡统一动效；系统开启「减少动态效果」时自动关闭。
     private var motion: Animation? { reduceMotion ? nil : .easeOut(duration: 0.2) }
 
-    var body: some View {
+    public var body: some View {
         VStack(spacing: 0) {
             HeaderView()
             ScrollView {

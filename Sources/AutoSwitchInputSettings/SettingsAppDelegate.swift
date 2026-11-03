@@ -1,5 +1,7 @@
 import AppKit
 import SwiftUI
+import AutoSwitchInputCore
+import AutoSwitchInputUI
 
 /// 设置窗口进程的 delegate（由菜单栏进程以 `--settings` 参数拉起）。
 ///

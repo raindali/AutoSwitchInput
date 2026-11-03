@@ -44,15 +44,21 @@ open /Applications/AutoSwitchInput.app
 
 `build.sh` compiles an arm64 binary, packages it into a `.app`, ad-hoc signs it, and auto-deploys to `/Applications`.
 
-**Option B: Run the workspace build**
+**Option B: Build only (no install)**
 
 ```bash
 cd AutoSwitchInput
-bash build.sh
+bash build.sh --no-install
 open AutoSwitchInput.app
 ```
 
 > If macOS blocks the unsigned app: System Settings › Privacy & Security › Allow Anyway.
+
+**Run the tests**
+
+```bash
+swift test
+```
 
 ---
 
@@ -82,19 +88,28 @@ open AutoSwitchInput.app
 
 ```
 AutoSwitchInput/
+├── Package.swift                     # SwiftPM: Core / UI / two executables
 ├── Sources/
-│   ├── main.swift              # AppKit entry; drives AppDelegate (replaces @main)
-│   ├── AppDelegate.swift       # Status bar, window, ⌘W, Dock reopen logic
-│   ├── AppMonitor.swift        # Watches foreground app switches
-│   ├── InputMethodManager.swift # Carbon TIS API wrapper
-│   ├── RuleStore.swift         # Rule persistence (UserDefaults) + launch-at-login
-│   ├── SettingsView.swift      # SwiftUI main UI (Liquid Glass)
-│   └── Design.swift            # Design tokens and LiquidGlass modifier
+│   ├── AutoSwitchInputCore/          # Pure logic (no SwiftUI)
+│   │   ├── Models.swift              # AppRule, run mode
+│   │   ├── RuleStore.swift           # Persistence + cross-process sync + login item
+│   │   ├── InputMethodManager.swift  # Carbon TIS wrapper and filtering
+│   │   └── AppMonitor.swift          # Foreground app watching with debounce
+│   ├── AutoSwitchInputUI/            # SwiftUI settings UI
+│   │   ├── SettingsView.swift        # Main UI (Liquid Glass)
+│   │   └── Design.swift              # Design tokens and LiquidGlass modifier
+│   ├── AutoSwitchInput/              # Menu-bar process (does not link SwiftUI)
+│   │   ├── main.swift
+│   │   └── AppDelegate.swift         # Status item, context menu, launches settings
+│   └── AutoSwitchInputSettings/      # Settings process (quits when its window closes)
+│       ├── main.swift
+│       └── SettingsAppDelegate.swift
+├── Tests/AutoSwitchInputCoreTests/   # Unit tests (swift test)
 ├── Resources/
 │   ├── Info.plist
 │   ├── AppIcon.icns            # Deep-gray keyboard app icon
 │   └── icon_src/gen_dock_icon.swift  # Icon generation script
-├── build.sh                    # Build + package + deploy script
+├── build.sh                    # Package .app + deploy script
 ├── LICENSE                     # GPLv3
 ├── README.md                   # Chinese documentation
 └── README_EN.md                # English documentation
@@ -104,7 +119,7 @@ AutoSwitchInput/
 
 ## Tech Stack
 
-Swift 6 · SwiftUI · AppKit · Carbon TIS API · direct `swiftc` compilation (no Xcode project) · ad-hoc signing · `SMAppService.mainApp` login item.
+Swift 6 · SwiftPM · SwiftUI · AppKit · Carbon TIS API · XCTest · ad-hoc signing · `SMAppService.mainApp` login item.
 
 ---
 

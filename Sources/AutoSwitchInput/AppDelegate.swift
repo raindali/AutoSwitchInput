@@ -1,4 +1,5 @@
 import AppKit
+import AutoSwitchInputCore
 
 /// AppKit delegate for the menu-bar process.
 ///

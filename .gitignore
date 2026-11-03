@@ -6,6 +6,8 @@
 
 # 本地编译产物
 *.app
+.build/
+.swiftpm/
 
 # 备份与图标构建中间产物
 Backups/

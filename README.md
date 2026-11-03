@@ -46,15 +46,21 @@ open /Applications/AutoSwitchInput.app
 
 `build.sh` 会编译 arm64 二进制、打包为 `.app`、ad-hoc 签名，并自动部署到 `/Applications`。
 
-**方式二：直接运行工作区构建**
+**方式二：只构建、不安装**
 
 ```bash
 cd AutoSwitchInput
-bash build.sh
+bash build.sh --no-install
 open AutoSwitchInput.app
 ```
 
 > 若 macOS 拦截未签名应用：系统设置 › 隐私与安全性 › 仍要打开。
+
+**运行测试**
+
+```bash
+swift test
+```
 
 ---
 
@@ -84,29 +90,38 @@ open AutoSwitchInput.app
 
 ```
 AutoSwitchInput/
+├── Package.swift                     # SwiftPM：Core / UI / 两个可执行 target
 ├── Sources/
-│   ├── main.swift              # AppKit 入口，驱动 AppDelegate（替代 @main）
-│   ├── AppDelegate.swift       # 状态栏、窗口、⌘W、Dock 重开逻辑
-│   ├── AppMonitor.swift        # 监听前台 App 切换
-│   ├── InputMethodManager.swift # Carbon TIS API 封装
-│   ├── RuleStore.swift         # 规则持久化（UserDefaults）+ 开机启动
-│   ├── SettingsView.swift      # SwiftUI 主界面（液态玻璃）
-│   └── Design.swift            # 设计令牌与 LiquidGlass 修饰符
+│   ├── AutoSwitchInputCore/          # 纯逻辑层（不依赖 SwiftUI）
+│   │   ├── Models.swift              # AppRule、运行模式
+│   │   ├── RuleStore.swift           # 规则持久化 + 跨进程同步 + 开机启动
+│   │   ├── InputMethodManager.swift  # Carbon TIS 封装与筛选逻辑
+│   │   └── AppMonitor.swift          # 前台 App 监听与防抖
+│   ├── AutoSwitchInputUI/            # SwiftUI 设置界面
+│   │   ├── SettingsView.swift        # 主界面（液态玻璃）
+│   │   └── Design.swift              # 设计令牌与 LiquidGlass 修饰符
+│   ├── AutoSwitchInput/              # 菜单栏常驻进程（不链接 SwiftUI）
+│   │   ├── main.swift
+│   │   └── AppDelegate.swift         # 状态栏、右键菜单、拉起设置进程
+│   └── AutoSwitchInputSettings/      # 设置窗口进程（关窗即退出）
+│       ├── main.swift
+│       └── SettingsAppDelegate.swift
+├── Tests/AutoSwitchInputCoreTests/   # 单元测试（swift test）
 ├── Resources/
 │   ├── Info.plist
-│   ├── AppIcon.icns            # 深灰键盘 Dock 图标
+│   ├── AppIcon.icns                  # 深灰键盘 Dock 图标
 │   └── icon_src/gen_dock_icon.swift  # 图标生成脚本
-├── build.sh                    # 编译 + 打包 + 部署脚本
-├── LICENSE                     # GPLv3
-├── README.md                   # 中文文档
-└── README_EN.md                # English documentation
+├── build.sh                          # 打包 .app + 部署脚本
+├── LICENSE                           # GPLv3
+├── README.md                         # 中文文档
+└── README_EN.md                      # English documentation
 ```
 
 ---
 
 ## 技术栈
 
-Swift 6 · SwiftUI · AppKit · Carbon TIS API · `swiftc` 直接编译（无 Xcode 工程）· ad-hoc 签名 · `SMAppService.mainApp` 登录项。
+Swift 6 · SwiftPM · SwiftUI · AppKit · Carbon TIS API · XCTest · ad-hoc 签名 · `SMAppService.mainApp` 登录项。
 
 ---
 
