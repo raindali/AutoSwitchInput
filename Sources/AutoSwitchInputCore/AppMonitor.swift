@@ -1,6 +1,7 @@
 import AppKit
 
 /// Monitors frontmost app changes via NSWorkspace notifications.
+@MainActor
 public final class AppMonitor {
     public static let shared = AppMonitor()
 
@@ -38,7 +39,10 @@ public final class AppMonitor {
             guard let self,
                   let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             else { return }
-            self.handleActivation(bundleID: app.bundleIdentifier ?? "", name: app.localizedName ?? "")
+            // 通知队列固定为 .main，这里可以直接断言主 actor 隔离。
+            MainActor.assumeIsolated {
+                self.handleActivation(bundleID: app.bundleIdentifier ?? "", name: app.localizedName ?? "")
+            }
         }
     }
 

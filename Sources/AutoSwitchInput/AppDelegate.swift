@@ -6,6 +6,7 @@ import AutoSwitchInputCore
 /// 这个进程只负责菜单栏图标、右键菜单和前台应用监听，**完全不碰 SwiftUI**。
 /// 设置窗口由 `AutoSwitchInputSettings`（同一二进制的副本，`--settings` 模式）承载，
 /// 关窗即退出，所以 SwiftUI 的视图图、图标/文字缓存不会滞留在常驻进程里。
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem?
@@ -187,8 +188,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         var environment = ProcessInfo.processInfo.environment
         environment["ASI_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
         process.environment = environment
+        // 终止回调在后台队列，回到主 actor 再清理引用。
         process.terminationHandler = { [weak self] _ in
-            DispatchQueue.main.async { self?.settingsProcess = nil }
+            Task { @MainActor in self?.settingsProcess = nil }
         }
 
         do {

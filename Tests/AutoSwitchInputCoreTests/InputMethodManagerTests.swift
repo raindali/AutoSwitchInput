@@ -1,6 +1,7 @@
 import XCTest
 @testable import AutoSwitchInputCore
 
+@MainActor
 final class InputMethodManagerTests: XCTestCase {
 
     private func raw(

@@ -30,6 +30,8 @@
 - **本地化**：界面文案全部抽到 `Resources/{en,zh-Hans}.lproj/Localizable.strings`（50 条），代码改用语义化 key + `L10n.t(...)`；系统语言为英文时菜单栏与设置窗口完整显示英文。新增 5 个测试校验两份表 key 一致、无空翻译、代码用到的 key 都存在、无残留 key、`%@` 占位符数量一致。
 - **统一日志**：`print` / `NSLog` 全部换成 `os.Logger`，按 `app / monitor / input-source / rules / settings` 分类，可用 `log stream --predicate 'subsystem == "com.qingwei.inputswitch"'` 过滤；输入法切换失败现在会记 error 级别日志。
 - `handleAppChange` 收敛为「算出目标输入法 → 切一次 → 记录结果」，去掉重复调用。
+- **Swift 6 语言模式**：`swift-tools-version` 升到 6.0 并启用 `swiftLanguageModes: [.v6]`。`RuleStore` / `AppMonitor` / `InputMethodManager` / 两个 delegate 标注 `@MainActor`，全局可变的图标缓存收进 `@MainActor` 类型；通知回调在 `.main` 队列上显式 `MainActor.assumeIsolated`，`Process.terminationHandler` 回主 actor 清理。`-strict-concurrency=complete` 下零警告。
+- **UI 文件拆分**：`SettingsView.swift`（753 行）按职责拆成 `SettingsView` / `RuleRow` / `AddRuleSheet` / `AutoInputMenu` 四个文件。
 
 ### 新增
 - 中文、英文分开的双版 README（`README.md` 中文、`README_EN.md` 英文）。

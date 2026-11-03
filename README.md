@@ -100,7 +100,10 @@ AutoSwitchInput/
 │   │   ├── Localization.swift        # L10n 本地化封装
 │   │   └── Log.swift                 # os.Logger 分类日志
 │   ├── AutoSwitchInputUI/            # SwiftUI 设置界面
-│   │   ├── SettingsView.swift        # 主界面（液态玻璃）
+│   │   ├── SettingsView.swift        # 主界面 + 头部状态（液态玻璃）
+│   │   ├── RuleRow.swift             # 单条规则行
+│   │   ├── AddRuleSheet.swift        # 添加规则面板
+│   │   ├── AutoInputMenu.swift       # 自制输入法下拉
 │   │   └── Design.swift              # 设计令牌与 LiquidGlass 修饰符
 │   ├── AutoSwitchInput/              # 菜单栏常驻进程（不链接 SwiftUI）
 │   │   ├── main.swift
@@ -125,7 +128,7 @@ AutoSwitchInput/
 
 ## 技术栈
 
-Swift 6 · SwiftPM · SwiftUI · AppKit · Carbon TIS API · XCTest · en / zh-Hans 本地化 · `os.Logger` · ad-hoc 签名 · `SMAppService.mainApp` 登录项。
+Swift 6 语言模式 · SwiftPM · SwiftUI · AppKit · Carbon TIS API · XCTest · en / zh-Hans 本地化 · `os.Logger` · ad-hoc 签名 · `SMAppService.mainApp` 登录项。
 
 ---
 

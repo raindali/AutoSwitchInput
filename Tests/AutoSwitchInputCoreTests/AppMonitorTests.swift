@@ -1,6 +1,7 @@
 import XCTest
 @testable import AutoSwitchInputCore
 
+@MainActor
 final class AppMonitorTests: XCTestCase {
 
     private let ownBundleID = "com.example.self"

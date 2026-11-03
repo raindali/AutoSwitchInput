@@ -2,6 +2,7 @@ import AppKit
 import Carbon
 
 /// Wraps the Carbon TIS (Text Input Source) API for listing and selecting input methods.
+@MainActor
 public final class InputMethodManager {
     public static let shared = InputMethodManager()
 
@@ -24,8 +25,8 @@ public final class InputMethodManager {
         let isEnabled: Bool
     }
 
-    static let keyboardCategory = "TISCategoryKeyboardInputSource"
-    static let parentContainerType = "TISTypeKeyboardInputMethodModeEnabled"
+    nonisolated static let keyboardCategory = "TISCategoryKeyboardInputSource"
+    nonisolated static let parentContainerType = "TISTypeKeyboardInputMethodModeEnabled"
 
     private var cache: [InputSource] = []
     private var cacheTime: Date?
@@ -48,7 +49,7 @@ public final class InputMethodManager {
     }
 
     /// 纯筛选逻辑：只保留启用的键盘输入法，去掉父容器类型与同名重复项，按名称排序。
-    static func filtered(_ sources: [RawInputSource]) -> [InputSource] {
+    nonisolated static func filtered(_ sources: [RawInputSource]) -> [InputSource] {
         var result: [InputSource] = []
         var seenNames = Set<String>()
 

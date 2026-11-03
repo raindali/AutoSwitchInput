@@ -11,6 +11,7 @@ public extension Notification.Name {
 ///
 /// 设置窗口运行在独立进程里，因此写入 UserDefaults 后需要通知另一个进程重新读取，
 /// 否则菜单栏进程仍会用旧规则去切换输入法。
+@MainActor
 public final class RuleStore: ObservableObject {
     public static let shared = RuleStore()
 
@@ -94,8 +95,11 @@ public final class RuleStore: ObservableObject {
                       let pid = notification.userInfo?["pid"] as? Int,
                       pid != Int(ProcessInfo.processInfo.processIdentifier)
                 else { return }
-                Log.rules.debug("收到跨进程规则变更，重新读取")
-                self.reloadFromDefaults()
+                // 通知队列固定为 .main，这里可以直接断言主 actor 隔离。
+                MainActor.assumeIsolated {
+                    Log.rules.debug("收到跨进程规则变更，重新读取")
+                    self.reloadFromDefaults()
+                }
             }
         }
     }
@@ -191,7 +195,7 @@ public final class RuleStore: ObservableObject {
     }
 
     /// Default seed rules for common apps.
-    public static func defaultRules() -> [AppRule] {
+    nonisolated public static func defaultRules() -> [AppRule] {
         let abc = "com.apple.keylayout.ABC"
         let pinyin = "com.apple.inputmethod.SCIM.ITABC"
         return [

@@ -1,4 +1,4 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.0
 import PackageDescription
 
 // 模块划分：
@@ -25,5 +25,6 @@ let package = Package(
             dependencies: ["AutoSwitchInputCore", "AutoSwitchInputUI"]
         ),
         .testTarget(name: "AutoSwitchInputCoreTests", dependencies: ["AutoSwitchInputCore"]),
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )

@@ -98,7 +98,10 @@ AutoSwitchInput/
 │   │   ├── Localization.swift        # L10n helper
 │   │   └── Log.swift                 # os.Logger categories
 │   ├── AutoSwitchInputUI/            # SwiftUI settings UI
-│   │   ├── SettingsView.swift        # Main UI (Liquid Glass)
+│   │   ├── SettingsView.swift        # Main UI + header status (Liquid Glass)
+│   │   ├── RuleRow.swift             # Single rule row
+│   │   ├── AddRuleSheet.swift        # Add-rule sheet
+│   │   ├── AutoInputMenu.swift       # Custom input-source dropdown
 │   │   └── Design.swift              # Design tokens and LiquidGlass modifier
 │   ├── AutoSwitchInput/              # Menu-bar process (does not link SwiftUI)
 │   │   ├── main.swift
@@ -123,7 +126,7 @@ AutoSwitchInput/
 
 ## Tech Stack
 
-Swift 6 · SwiftPM · SwiftUI · AppKit · Carbon TIS API · XCTest · en / zh-Hans localization · `os.Logger` · ad-hoc signing · `SMAppService.mainApp` login item.
+Swift 6 language mode · SwiftPM · SwiftUI · AppKit · Carbon TIS API · XCTest · en / zh-Hans localization · `os.Logger` · ad-hoc signing · `SMAppService.mainApp` login item.
 
 ---
 

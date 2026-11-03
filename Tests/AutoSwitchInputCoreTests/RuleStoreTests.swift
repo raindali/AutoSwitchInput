@@ -1,6 +1,7 @@
 import XCTest
 @testable import AutoSwitchInputCore
 
+@MainActor
 final class RuleStoreTests: XCTestCase {
     private var suiteName = ""
     private var defaults: UserDefaults!

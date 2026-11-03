@@ -8,6 +8,7 @@ import AutoSwitchInputUI
 /// 独立进程的意义：SwiftUI 的 AttributeGraph / DisplayList、图标与文字渲染缓存、
 /// 窗口后备存储全部只存在于这个短命进程里。窗口一关进程即退出，常驻的菜单栏进程
 /// 始终保持在 ~12 MB，不会再因为「开过一次设置」而长期多占 ~20 MB。
+@MainActor
 final class SettingsAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private var window: NSWindow?
