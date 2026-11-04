@@ -5,9 +5,11 @@ import AutoSwitchInputCore
 // MARK: - Settings Window (Redesigned)
 
 public struct SettingsView: View {
-    @ObservedObject private var store = RuleStore.shared
+    @ObservedObject private var store: RuleStore
 
-    public init() {}
+    public init(store: RuleStore = .shared) {
+        _store = ObservedObject(wrappedValue: store)
+    }
 
     @State private var showingAddSheet = false
     @State private var inputSources: [InputMethodManager.InputSource] = []
@@ -18,7 +20,7 @@ public struct SettingsView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            HeaderView()
+            HeaderView(store: store)
             ScrollView {
                 VStack(alignment: .leading, spacing: Design.spacing6) {
                     generalSection
@@ -160,7 +162,8 @@ public struct SettingsView: View {
                 if store.rules.isEmpty {
                     emptyState
                 } else {
-                    VStack(spacing: Design.spacing2) {
+                    // 惰性列表：规则多时只构建可见行，避免视图图随规则数线性增长。
+                    LazyVStack(spacing: Design.spacing2) {
                         ForEach(store.rules) { rule in
                             RuleRow(
                                 rule: rule,
@@ -236,7 +239,7 @@ public struct SettingsView: View {
 // MARK: - Header (Brand Area)
 
 struct HeaderView: View {
-    @ObservedObject private var store = RuleStore.shared
+    @ObservedObject var store: RuleStore
 
     var body: some View {
         HStack(spacing: Design.spacing4) {

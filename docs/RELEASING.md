@@ -12,15 +12,15 @@
 **① 生成自签名证书**（本机执行一次）
 
 ```bash
-P12_PASSWORD='给 p12 设的强密码' ./scripts/make-self-signed-cert.sh
+./scripts/make-self-signed-cert.sh        # 交互输入 p12 口令
 ```
 
 **② 配置 3 个 Secrets**（仓库 Settings → Secrets and variables → Actions）
 
 | Secret | 值 |
 |---|---|
-| `SIGN_CERT_P12_BASE64` | 脚本输出的那一整行 base64 |
-| `SIGN_CERT_PASSWORD` | 上面的 `P12_PASSWORD` |
+| `SIGN_CERT_P12_BASE64` | `dist/self-signed/id.p12.base64` 的内容（脚本不再直接打印私钥） |
+| `SIGN_CERT_PASSWORD` | 生成证书时输入的口令 |
 | `KEYCHAIN_PASSWORD` | 随便一个新的强密码（CI 临时钥匙串用） |
 
 配置完成后删除本地私钥：`rm -rf dist/self-signed`
@@ -66,7 +66,7 @@ ad-hoc 签名的身份只有 CDHash，重新编译就变 → 用户每次升级�
 ### 模式 B：自签名（免费，推荐）
 
 ```bash
-P12_PASSWORD='给 p12 设的密码' ./scripts/make-self-signed-cert.sh
+./scripts/make-self-signed-cert.sh        # 交互输入口令
 ```
 
 脚本会生成 `dist/self-signed/id.p12`，并打印需要填进 GitHub 的 secrets。
@@ -74,8 +74,8 @@ P12_PASSWORD='给 p12 设的密码' ./scripts/make-self-signed-cert.sh
 
 | Secret 名称 | 内容 |
 |---|---|
-| `SIGN_CERT_P12_BASE64` | 脚本输出的那一整行 base64 |
-| `SIGN_CERT_PASSWORD` | 上面设置的 `P12_PASSWORD` |
+| `SIGN_CERT_P12_BASE64` | `dist/self-signed/id.p12.base64` 的内容 |
+| `SIGN_CERT_PASSWORD` | 生成证书时输入的口令 |
 | `KEYCHAIN_PASSWORD` | 随便一个新的强密码（CI 临时钥匙串用） |
 
 上传后删除本地私钥：`rm -rf dist/self-signed`。
@@ -191,7 +191,13 @@ SIGN_IDENTITY='<SHA-1>' SIGN_KEYCHAIN='<keychain>' ./build.sh
   `.gitignore` 已覆盖，CI 也会拦截。
 - CI 日志里不要 `echo` 任何 secret。
 - 公证使用**独立 App 专用密码**，可随时在 Apple ID 页面吊销。
-- 证书泄露时：吊销证书 → 重新签发 → 更新 secret。
+- **自签名证书没有吊销机制**（不在 Apple 信任链上，没有 CRL/OCSP）。
+  私钥一旦泄露，等同于不可恢复的冒名：对方可以签出满足同一
+  `certificate leaf = H"…"` 要求的包，并继承用户已授予的 TCC 权限。
+  处置只有一条路：`scripts/make-self-signed-cert.sh` 重新生成证书 →
+  更新两个 secret → 重新发版 → **公告用户需要重新授予输入监控 / 辅助功能**
+  （签名身份变了，旧授权不会延续）。
+- Developer ID 证书泄露时：到 Apple Developer 吊销证书 → 重新签发 → 更新 secret。
 - 发布产物只上传 `.zip` / `.dmg`，**不要上传 `.xcarchive`**（内含本地路径与 dSYM）。
 - 自签名私钥同样敏感：拿到它的人可以冒充你的 App 签名。
 

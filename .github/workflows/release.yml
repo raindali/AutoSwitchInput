@@ -67,7 +67,8 @@ jobs:
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
           printf '%s' "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
-          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PW" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          # -T 只授权 codesign 使用该私钥（-A 会让 job 内任何进程免提示访问）
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PW" -T /usr/bin/codesign -t cert -f pkcs12 -k "$KEYCHAIN"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PW" "$KEYCHAIN"
           rm -f "$RUNNER_TEMP/cert.p12"
           echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
@@ -119,6 +120,13 @@ jobs:
             SIGN_IDENTITY="$IDENTITY" SIGN_KEYCHAIN="$KEYCHAIN" ./build.sh --no-install
           fi
 
+      # 签完立刻销毁签名身份：后续步骤（公证 / 打包 / 上传）都不需要私钥。
+      - name: Discard signing identity
+        if: always() && steps.mode.outputs.mode != 'adhoc'
+        run: |
+          security delete-keychain "$RUNNER_TEMP/build.keychain-db" || true
+          rm -f "$RUNNER_TEMP/cert.p12"
+
       # ---------- 公证（仅 Developer ID）----------
       - name: Notarize and staple
         if: steps.mode.outputs.mode == 'developer-id'
@@ -146,8 +154,12 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
+          PLIST_VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' AutoSwitchInput.app/Contents/Info.plist)"
           if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
-            VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' AutoSwitchInput.app/Contents/Info.plist)"
+            VERSION="$PLIST_VERSION"
+          elif [ "$VERSION" != "$PLIST_VERSION" ]; then
+            echo "::error::tag $GITHUB_REF_NAME 与 Info.plist 的 $PLIST_VERSION 不一致，先更新版本号再发版"
+            exit 1
           fi
           mkdir -p dist
           ditto -c -k --keepParent AutoSwitchInput.app "dist/AutoSwitchInput-$VERSION.zip"
@@ -170,10 +182,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release create "$GITHUB_REF_NAME" \
-            dist/*.zip dist/*.dmg dist/SHA256SUMS.txt \
-            --title "$GITHUB_REF_NAME" \
-            --notes-file dist/RELEASE_NOTES.md
+          # 幂等：部分上传失败后重跑能补齐，而不是卡在 "release already exists"。
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/*.zip dist/*.dmg dist/SHA256SUMS.txt --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              dist/*.zip dist/*.dmg dist/RELEASE_NOTES.md \
+              --title "$GITHUB_REF_NAME" \
+              --notes-file dist/RELEASE_NOTES.md
+            # 校验和最后上传：中途失败时它缺失，用户能看出产物不完整
+            gh release upload "$GITHUB_REF_NAME" dist/SHA256SUMS.txt --clobber
+          fi
 
       - name: Upload dry-run artifact
         if: github.event_name == 'workflow_dispatch'

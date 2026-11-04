@@ -18,6 +18,7 @@ final class SettingsAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     private var parentSource: DispatchSourceProcess?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Log.settings.debug("设置进程启动 pid=\(ProcessInfo.processInfo.processIdentifier)")
         NSApp.setActivationPolicy(.accessory)
         setupWindow()
         setupKeyMonitor()

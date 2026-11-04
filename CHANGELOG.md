@@ -8,7 +8,19 @@
 
 ## [未发布 / Unreleased]
 
-（暂无）
+### 修复（代码评审发现）
+
+- **签名私钥收敛**：`security import` 从 `-A` 改为 `-T /usr/bin/codesign`，并在签名步骤后立刻销毁临时钥匙串；此前发布 job 内任何后续步骤（含第三方 action）都能免提示使用签名身份。
+- **跨进程同步改为快照直传**：`DistributedNotificationCenter` 的 `userInfo` 直接携带新快照，接收方不再二次读盘——两条 XPC 通道没有顺序保证，重读可能拿到旧值而静默放弃。
+- **设置收成单个 `Codable` 快照**：`save()` 与 `reloadFromDefaults()` 不再各自维护一份手写字段列表，新增设置不会漏同步；1.0 的四个散装 key 自动迁移并在首次保存时清理。
+- **升级不再丢默认规则**：没有快照时统一补种（覆盖「1.0 从未落盘规则」的升级场景），用户主动删空则不会被重新播种。
+- **改完规则立即生效**：`RuleStore.onRemoteChange` 回调让菜单栏进程重放当前前台 App 的规则，不必切走再切回来。
+- **输入源决策抽到 Core**：`RuleStore.targetInputSourceID(for:)` 覆盖「规则命中 / 默认兜底 / 总开关关闭 / 两者皆无」四种分支，并补表驱动测试。
+- **设置进程缺失有可见反馈**：拉起失败时弹 NSAlert（新增 en / zh-Hans 文案），不再静默无反应；`terminationHandler` 校验进程身份，避免迟到回调清掉新引用。
+- **发布幂等**：`gh release view` 命中则 `upload --clobber`，校验和最后上传；tag 与 `Info.plist` 版本不一致直接失败。
+- **CI 去重**：`ci.yml` 改为只调 `./scripts/release-check.sh`；凭据 pattern 抽成单一常量并补 `.p8` / `.xcarchive`。
+- **证书脚本不再打印私钥**：口令改为文件或交互输入（不进 argv / shell history），base64 写入 0600 文件；文档更正「自签名证书可吊销」的错误说法。
+- **UI 小修**：图标缓存降采样到 72×72 并设 64 条上限；规则列表改 `LazyVStack`；`SettingsView` / `HeaderView` 支持注入 `RuleStore`；补上此前从未发射的 `Log.monitor` / `Log.settings`；修正「同一二进制副本」的过时注释。
 
 ## [1.1.0] — 2026-11-03
 

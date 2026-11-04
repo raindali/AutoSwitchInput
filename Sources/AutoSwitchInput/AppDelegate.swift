@@ -4,8 +4,9 @@ import AutoSwitchInputCore
 /// AppKit delegate for the menu-bar process.
 ///
 /// 这个进程只负责菜单栏图标、右键菜单和前台应用监听，**完全不碰 SwiftUI**。
-/// 设置窗口由 `AutoSwitchInputSettings`（同一二进制的副本，`--settings` 模式）承载，
-/// 关窗即退出，所以 SwiftUI 的视图图、图标/文字缓存不会滞留在常驻进程里。
+/// 设置窗口由独立可执行文件 `AutoSwitchInputSettings` 承载（与菜单栏进程并排放在
+/// Contents/MacOS 下，以 `--settings` 启动），关窗即退出，
+/// 所以 SwiftUI 的视图图、图标/文字缓存不会滞留在常驻进程里。
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
 
@@ -121,6 +122,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         AppMonitor.shared.start()
 
+        // 设置进程改了规则后立刻重放当前前台 App，否则要切走再切回来才生效。
+        RuleStore.shared.onRemoteChange = { [weak self] in
+            guard let self, let bundleID = AppMonitor.shared.currentBundleID else { return }
+            self.handleAppChange(bundleID: bundleID, appName: AppMonitor.shared.currentAppName ?? "")
+        }
+
         // Apply rule for the app that was frontmost at launch
         if let bundleID = AppMonitor.shared.currentBundleID {
             handleAppChange(bundleID: bundleID, appName: AppMonitor.shared.currentAppName ?? "")
@@ -128,11 +135,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleAppChange(bundleID: String, appName: String) {
-        guard RuleStore.shared.autoSwitchEnabled else { return }
-
-        let targetID = RuleStore.shared.rule(for: bundleID)?.inputSourceID
-            ?? RuleStore.shared.defaultInputSourceID
-        guard let targetID else { return }
+        // 选哪个输入源的决策在 Core 里，便于单测覆盖（规则命中 / 默认兜底 / 总开关关闭）。
+        guard let targetID = RuleStore.shared.targetInputSourceID(for: bundleID) else { return }
 
         if InputMethodManager.shared.selectInputSource(id: targetID) {
             Log.inputSource.debug("已切换输入法: \(targetID, privacy: .public)")
@@ -172,13 +176,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        guard let executable = Bundle.main.executableURL else { return }
+        guard let executable = Bundle.main.executableURL else {
+            Log.app.error("无法定位主可执行文件，设置界面不可用")
+            presentSettingsUnavailable()
+            return
+        }
         // 设置界面是独立的可执行文件（AutoSwitchInputSettings），和菜单栏进程并排放在
         // Contents/MacOS 下。缺失说明 .app 打包不完整，直接报错而不是误拉起自己。
         let helper = executable.deletingLastPathComponent()
             .appendingPathComponent("AutoSwitchInputSettings")
         guard FileManager.default.isExecutableFile(atPath: helper.path) else {
             Log.app.error("找不到设置进程: \(helper.path, privacy: .public)")
+            presentSettingsUnavailable()
             return
         }
 
@@ -189,8 +198,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         environment["ASI_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
         process.environment = environment
         // 终止回调在后台队列，回到主 actor 再清理引用。
-        process.terminationHandler = { [weak self] _ in
-            Task { @MainActor in self?.settingsProcess = nil }
+        // 必须校验身份：旧进程的迟到回调不能把刚拉起的新进程引用清掉。
+        process.terminationHandler = { [weak self, weak process] _ in
+            Task { @MainActor in
+                guard let self, let process, self.settingsProcess === process else { return }
+                self.settingsProcess = nil
+            }
         }
 
         do {
@@ -199,7 +212,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Log.app.debug("已拉起设置进程 pid=\(process.processIdentifier)")
         } catch {
             Log.app.error("无法启动设置窗口进程: \(error.localizedDescription, privacy: .public)")
+            presentSettingsUnavailable()
         }
+    }
+
+    /// 设置界面起不来时给出可见反馈：静默失败会让用户以为点击没生效。
+    private func presentSettingsUnavailable() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = L10n.t("alert.settingsUnavailable.title")
+        alert.informativeText = L10n.t("alert.settingsUnavailable.message")
+        alert.addButton(withTitle: L10n.t("alert.settingsUnavailable.dismiss"))
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     @objc private func quit() {

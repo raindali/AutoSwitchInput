@@ -20,7 +20,22 @@ set -euo pipefail
 # ============================================
 
 CN="${1:-AutoSwitchInput Self-Signed}"
-: "${P12_PASSWORD:?用法: P12_PASSWORD='你的密码' ./scripts/make-self-signed-cert.sh [证书名]}"
+
+# 口令不要走命令行：会留在 shell history 与进程参数里（ps 可见）。
+# 优先读 P12_PASSWORD_FILE，其次交互输入；都不行就退出。
+if [ -z "${P12_PASSWORD:-}" ]; then
+    if [ -n "${P12_PASSWORD_FILE:-}" ]; then
+        P12_PASSWORD="$(cat "$P12_PASSWORD_FILE")"
+    elif [ -t 0 ]; then
+        printf 'p12 password: ' >&2
+        read -r -s P12_PASSWORD
+        printf '\n' >&2
+    else
+        echo "用法: P12_PASSWORD_FILE=<文件> $0 [证书名]  或交互输入" >&2
+        exit 1
+    fi
+fi
+[ -n "$P12_PASSWORD" ] || { echo "口令不能为空" >&2; exit 1; }
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${OUT_DIR:-$PROJECT_DIR/dist/self-signed}"
@@ -52,7 +67,9 @@ SHA1="$(openssl x509 -in "$OUT/cert.pem" -noout -fingerprint -sha1 \
     | sed 's/.*=//; s/://g' | tr '[:upper:]' '[:lower:]')"
 
 echo "[4/4] 生成 GitHub Secret 内容..."
-B64="$(base64 -i "$OUT/id.p12" | tr -d '\n')"
+# base64 写进 0600 文件，不要打到 stdout（终端回滚区 / 录屏 / 日志都会留下私钥）
+base64 -i "$OUT/id.p12" | tr -d '\n' > "$OUT/id.p12.base64"
+chmod 600 "$OUT/id.p12.base64"
 
 cat <<EOF
 
@@ -63,8 +80,10 @@ cat <<EOF
 
 GitHub Secrets（仓库 Settings → Secrets and variables → Actions）：
 
-  SIGN_CERT_P12_BASE64 = 下面这一整行
-$(printf '%s' "$B64" | fold -w 100 | sed 's/^/    /')
+  SIGN_CERT_P12_BASE64 = 下面文件的内容（不要直接打印到终端）
+
+    cat "$OUT/id.p12.base64" | pbcopy     # 拷到剪贴板后粘贴进 Secret
+    # 或：cat "$OUT/id.p12.base64"
 
   SIGN_CERT_PASSWORD   = 你刚才设置的 P12_PASSWORD
   KEYCHAIN_PASSWORD    = 随便一个新的强密码（CI 里临时钥匙串用）

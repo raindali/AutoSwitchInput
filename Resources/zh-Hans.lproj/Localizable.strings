@@ -61,3 +61,8 @@
 "settings.add.inputSource.empty" = "暂无可用输入法";
 "settings.add.cancel" = "取消";
 "settings.add.confirm" = "添加";
+
+/* 设置组件缺失提示 */
+"alert.settingsUnavailable.title" = "无法打开设置";
+"alert.settingsUnavailable.message" = "应用包内缺少设置组件，请重新安装同一版本的 AutoSwitchInput 后再试。";
+"alert.settingsUnavailable.dismiss" = "好";

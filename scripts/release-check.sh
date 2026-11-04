@@ -18,6 +18,7 @@ set -euo pipefail
 
 APP_NAME="AutoSwitchInput"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+RES_DIR="$PROJECT_DIR/Resources"
 cd "$PROJECT_DIR"
 
 RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; BOLD=$'\033[1m'; RESET=$'\033[0m'
@@ -28,7 +29,9 @@ warn() { echo "  ${YELLOW}!${RESET} $1"; }
 fail() { echo "  ${RED}✗${RESET} $1"; FAILED=1; }
 
 echo "${BOLD}== 1. 凭据泄露检查 ==="
-SECRET_FILES="$(git ls-files | grep -E '\.(p12|pfx|cer|mobileprovision|provisionprofile|key|pem)$|(^|/)ExportOptions\.plist$|sparkle_private_key' || true)"
+# 与 .gitignore 的凭据段保持一致；新增类型时只改这一处
+SECRET_PATTERN='\.(p12|pfx|cer|p8|mobileprovision|provisionprofile|key|pem)$|(^|/)ExportOptions\.plist$|sparkle_private_key|\.xcarchive(/|$)'
+SECRET_FILES="$(git ls-files | grep -E "$SECRET_PATTERN" || true)"
 if [ -n "$SECRET_FILES" ]; then
     fail "仓库里有凭据类文件被跟踪："
     echo "$SECRET_FILES" | sed 's/^/      /'
@@ -49,6 +52,13 @@ if [ -n "$(git status --porcelain)" ]; then
     git status --short | sed 's/^/      /'
 else
     pass "工作区干净"
+fi
+
+# tag 与版本号不一致时发布出的资产名会与 app 自报版本对不上
+PLIST_VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$RES_DIR/Info.plist" 2>/dev/null || echo "?")"
+EXACT_TAG="$(git describe --tags --exact-match 2>/dev/null || true)"
+if [ -n "$EXACT_TAG" ] && [ "v${PLIST_VERSION}" != "$EXACT_TAG" ]; then
+    fail "HEAD 上的 tag 是 $EXACT_TAG，但 Info.plist 版本是 $PLIST_VERSION"
 fi
 
 echo

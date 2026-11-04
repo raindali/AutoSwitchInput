@@ -61,3 +61,8 @@
 "settings.add.inputSource.empty" = "No input sources available";
 "settings.add.cancel" = "Cancel";
 "settings.add.confirm" = "Add";
+
+/* 设置组件缺失提示 */
+"alert.settingsUnavailable.title" = "Settings are unavailable";
+"alert.settingsUnavailable.message" = "The settings component is missing from the app bundle. Reinstall AutoSwitchInput from the same release and try again.";
+"alert.settingsUnavailable.dismiss" = "OK";

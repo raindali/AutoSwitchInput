@@ -159,17 +159,30 @@ struct GlassRow<Content: View>: View {
 @MainActor
 private enum AppIconCache {
     static var storage: [String: NSImage] = [:]
+    /// 缓存条数上限；超过就整体清空，避免规则很多时无限增长。
+    static let limit = 64
+    /// 调用方最大渲染 36 pt，按 2x 降采样即可，不必保留全分辨率图标。
+    static let targetSize = NSSize(width: 72, height: 72)
+
+    static func icon(for bundleID: String) -> NSImage? {
+        if let cached = storage[bundleID] { return cached }
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
+
+        let full = NSWorkspace.shared.icon(forFile: url.path)
+        let resized = NSImage(size: targetSize, flipped: false) { rect in
+            full.draw(in: rect)
+            return true
+        }
+        if storage.count >= limit { storage.removeAll(keepingCapacity: true) }
+        storage[bundleID] = resized
+        return resized
+    }
 }
 
 /// 解析应用图标：按 Bundle ID 取真实图标，失败回退到系统 app 符号。
 @MainActor
 func appIcon(for bundleID: String) -> Image {
-    if let cached = AppIconCache.storage[bundleID] {
-        return Image(nsImage: cached)
-    }
-    if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-        let icon = NSWorkspace.shared.icon(forFile: url.path)
-        AppIconCache.storage[bundleID] = icon
+    if let icon = AppIconCache.icon(for: bundleID) {
         return Image(nsImage: icon)
     }
     return Image(systemName: "app.fill")

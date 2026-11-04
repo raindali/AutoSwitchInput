@@ -63,6 +63,7 @@ public final class AppMonitor {
         guard bundleID != currentBundleID, bundleID != ownBundleID else { return }
         currentBundleID = bundleID
         currentAppName = name
+        Log.monitor.debug("前台应用切换: \(bundleID, privacy: .public)")
 
         // Debounce: wait a beat to skip rapid app switching.
         // 用一次性 DispatchWorkItem 代替 Timer：不注册 RunLoop 源，切换时也不额外分配对象。

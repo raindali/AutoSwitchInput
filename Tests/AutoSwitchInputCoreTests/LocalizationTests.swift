@@ -25,7 +25,7 @@ final class LocalizationTests: XCTestCase {
     /// 扫描源码里所有形如 "menu.xxx" / "settings.xxx" / "statusItem.xxx" 的 key。
     private func keysUsedInCode() throws -> Set<String> {
         let sources = Self.packageRoot.appendingPathComponent("Sources")
-        let pattern = try NSRegularExpression(pattern: #""((?:menu|settings|statusItem)\.[A-Za-z0-9.]+)""#)
+        let pattern = try NSRegularExpression(pattern: #""((?:menu|settings|statusItem|alert)\.[A-Za-z0-9.]+)""#)
         var keys = Set<String>()
 
         let enumerator = FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil)
