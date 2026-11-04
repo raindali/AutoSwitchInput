@@ -398,9 +398,9 @@ struct AddRuleSheet: View {
     @State private var manualBundleID: String = ""
     @State private var manualAppName: String = ""
     @State private var useManual = false
+    /// 打开 sheet 时抓一次运行中应用快照；原来每次重绘都会重新枚举所有进程。
+    @State private var runningApps: [NSRunningApplication] = []
     @Environment(\.dismiss) var dismiss
-
-    private var runningApps: [NSRunningApplication] { store.runningApps() }
 
     // MARK: - Derived
     private var finalBundleID: String { useManual ? manualBundleID : selectedBundleID }
@@ -429,6 +429,7 @@ struct AddRuleSheet: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .tint(Design.accent)
         .accentColor(Design.accent)
+        .onAppear { runningApps = store.runningApps() }
     }
 
     // MARK: - Sections

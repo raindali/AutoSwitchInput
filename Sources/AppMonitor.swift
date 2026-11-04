@@ -10,7 +10,7 @@ class AppMonitor {
     private(set) var currentBundleID: String?
     private(set) var currentAppName: String?
     private var observer: NSObjectProtocol?
-    private var debounceTimer: Timer?
+    private var pendingChange: DispatchWorkItem?
 
     func start() {
         // Capture the app that was active at launch
@@ -36,11 +36,15 @@ class AppMonitor {
             self.currentBundleID = bundleID
             self.currentAppName = name
 
-            // Debounce: wait 80ms to skip rapid app switching
-            self.debounceTimer?.invalidate()
-            self.debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: false) { [weak self] _ in
+            // Debounce: wait 80ms to skip rapid app switching.
+            // 一次性 DispatchWorkItem 代替 Timer：不注册 RunLoop 源，也不额外分配对象。
+            self.pendingChange?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                self?.pendingChange = nil
                 self?.onAppChange?(bundleID, name)
             }
+            self.pendingChange = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
         }
     }
 
@@ -49,6 +53,7 @@ class AppMonitor {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
             self.observer = nil
         }
-        debounceTimer?.invalidate()
+        pendingChange?.cancel()
+        pendingChange = nil
     }
 }

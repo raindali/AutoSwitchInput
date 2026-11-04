@@ -67,11 +67,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.action = #selector(statusBarClicked(_:))
             _ = button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
-        rebuildMenu()
     }
 
-    private func rebuildMenu() {
-        guard statusItem != nil else { return }
+    /// 菜单内容按需构建：只在右键真正弹出菜单时生成。
+    /// 原来每次前台应用切换都会重建一遍，而那时菜单并不可见。
+    private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
         // Auto-switch toggle
@@ -119,7 +119,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         quit.target = self
         menu.addItem(quit)
 
-        statusMenu = menu
+        return menu
     }
 
     // MARK: - Monitor
@@ -127,7 +127,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupMonitor() {
         AppMonitor.shared.onAppChange = { [weak self] bundleID, appName in
             self?.handleAppChange(bundleID: bundleID, appName: appName)
-            self?.rebuildMenu()
         }
         AppMonitor.shared.start()
 
@@ -154,11 +153,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let isRightClick = event.type == .rightMouseUp || event.modifierFlags.contains(.control)
         if isRightClick {
-            rebuildMenu()
-            if let menu = statusMenu {
-                let point = NSPoint(x: 0, y: NSHeight(sender.bounds) + 4)
-                menu.popUp(positioning: nil, at: point, in: sender)
-            }
+            let menu = buildMenu()
+            statusMenu = menu  // tracking 期间持有强引用
+            let point = NSPoint(x: 0, y: NSHeight(sender.bounds) + 4)
+            menu.popUp(positioning: nil, at: point, in: sender)
+            statusMenu = nil
         } else {
             showSettings()
         }
@@ -168,7 +167,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleAutoSwitch() {
         RuleStore.shared.autoSwitchEnabled.toggle()
-        rebuildMenu()
     }
 
     @objc private func showSettings() {
