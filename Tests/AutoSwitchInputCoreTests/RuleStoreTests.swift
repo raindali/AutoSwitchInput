@@ -254,6 +254,37 @@ final class RuleStoreTests: XCTestCase {
 
     // MARK: - 默认规则内容
 
+    func testDefaultRulesUseProvidedInputSources() {
+        let rules = RuleStore.defaultRules(
+            english: (id: "en.layout", name: "EN"),
+            chinese: (id: "zh.ime", name: "ZH")
+        )
+
+        let devTools = rules.filter { $0.bundleIdentifier != "com.tencent.xinWeChat" }
+        XCTAssertFalse(devTools.isEmpty)
+        XCTAssertTrue(devTools.allSatisfy { $0.inputSourceID == "en.layout" && $0.inputSourceName == "EN" })
+
+        let weChat = rules.first { $0.bundleIdentifier == "com.tencent.xinWeChat" }
+        XCTAssertEqual(weChat?.inputSourceID, "zh.ime")
+        XCTAssertEqual(weChat?.inputSourceName, "ZH")
+    }
+
+    /// 首次播种不能写死用户没启用的输入源（否则 TISSelectInputSource 返回 -50）。
+    func testSeededRulesUseEnabledInputSources() throws {
+        let enabled = Set(InputMethodManager.shared.getAllInputSources().map(\.id))
+        let hasLayout = enabled.contains { $0.hasPrefix("com.apple.keylayout.") }
+        let hasInputMethod = enabled.contains { !$0.hasPrefix("com.apple.keylayout.") }
+        try XCTSkipUnless(hasLayout && hasInputMethod, "环境里没有同时启用英文布局与中文输入法")
+
+        let store = makeStore()
+        for rule in store.rules {
+            XCTAssertTrue(
+                enabled.contains(rule.inputSourceID),
+                "\(rule.bundleIdentifier) 指向未启用的 \(rule.inputSourceID)"
+            )
+        }
+    }
+
     func testDefaultRulesCoverCommonEditors() {
         let ids = Set(RuleStore.defaultRules().map(\.bundleIdentifier))
         XCTAssertTrue(ids.contains("com.apple.Terminal"))

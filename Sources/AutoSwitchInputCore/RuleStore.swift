@@ -89,7 +89,8 @@ public final class RuleStore: ObservableObject {
 
         if defaults.data(forKey: Keys.snapshot) == nil {
             if rules.isEmpty {
-                rules = RuleStore.defaultRules()
+                let seed = Self.seedSources()
+                rules = RuleStore.defaultRules(english: seed.english, chinese: seed.chinese)
             }
             save()
         }
@@ -255,37 +256,60 @@ public final class RuleStore: ObservableObject {
             .sorted { ($0.localizedName ?? "") < ($1.localizedName ?? "") }
     }
 
+    /// 首次播种用的英文 / 中文输入源：从当前已启用的列表里挑，
+    /// 避免写死用户没有启用（`TISSelectInputSource` 会返回 -50）的 ID。
+    private static func seedSources() -> (
+        english: (id: String, name: String),
+        chinese: (id: String, name: String)
+    ) {
+        let sources = InputMethodManager.shared.getAllInputSources()
+        let layouts = sources.filter { $0.id.hasPrefix("com.apple.keylayout.") }
+        let inputMethods = sources.filter { !$0.id.hasPrefix("com.apple.keylayout.") }
+
+        let english = layouts.first { $0.id == "com.apple.keylayout.ABC" }
+            ?? layouts.first { $0.id == "com.apple.keylayout.US" }
+            ?? layouts.first
+        let chinese = inputMethods.first { $0.id == "com.apple.inputmethod.SCIM.ITABC" }
+            ?? inputMethods.first
+
+        return (
+            english.map { ($0.id, $0.name) } ?? ("com.apple.keylayout.ABC", "ABC"),
+            chinese.map { ($0.id, $0.name) } ?? ("com.apple.inputmethod.SCIM.ITABC", "Pinyin – Simplified")
+        )
+    }
+
     /// Default seed rules for common apps.
-    nonisolated public static func defaultRules() -> [AppRule] {
-        let abc = "com.apple.keylayout.ABC"
-        let pinyin = "com.apple.inputmethod.SCIM.ITABC"
+    nonisolated public static func defaultRules(
+        english: (id: String, name: String) = ("com.apple.keylayout.ABC", "ABC"),
+        chinese: (id: String, name: String) = ("com.apple.inputmethod.SCIM.ITABC", "Pinyin – Simplified")
+    ) -> [AppRule] {
         return [
             // Dev tools → English
             AppRule(bundleIdentifier: "com.apple.Terminal",
                     appName: "Terminal",
-                    inputSourceID: abc,
-                    inputSourceName: "ABC"),
+                    inputSourceID: english.id,
+                    inputSourceName: english.name),
             AppRule(bundleIdentifier: "com.googlecode.iterm2",
                     appName: "iTerm2",
-                    inputSourceID: abc,
-                    inputSourceName: "ABC"),
+                    inputSourceID: english.id,
+                    inputSourceName: english.name),
             AppRule(bundleIdentifier: "com.microsoft.VSCode",
                     appName: "VS Code",
-                    inputSourceID: abc,
-                    inputSourceName: "ABC"),
+                    inputSourceID: english.id,
+                    inputSourceName: english.name),
             AppRule(bundleIdentifier: "com.apple.dt.Xcode",
                     appName: "Xcode",
-                    inputSourceID: abc,
-                    inputSourceName: "ABC"),
+                    inputSourceID: english.id,
+                    inputSourceName: english.name),
             AppRule(bundleIdentifier: "com.todesktop.230313mzl4w4u92",
                     appName: "Warp",
-                    inputSourceID: abc,
-                    inputSourceName: "ABC"),
+                    inputSourceID: english.id,
+                    inputSourceName: english.name),
             // Communication apps → Chinese
             AppRule(bundleIdentifier: "com.tencent.xinWeChat",
                     appName: "WeChat",
-                    inputSourceID: pinyin,
-                    inputSourceName: "Pinyin – Simplified"),
+                    inputSourceID: chinese.id,
+                    inputSourceName: chinese.name),
         ]
     }
 }

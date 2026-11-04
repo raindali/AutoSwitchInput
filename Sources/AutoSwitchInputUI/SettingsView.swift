@@ -18,6 +18,12 @@ public struct SettingsView: View {
     /// 结构过渡统一动效；系统开启「减少动态效果」时自动关闭。
     private var motion: Animation? { reduceMotion ? nil : .easeOut(duration: 0.2) }
 
+    /// 默认输入源可能被用户在系统设置里关掉，此时下拉里找不到它。
+    private var defaultInputSourceUnavailable: Bool {
+        guard let id = store.defaultInputSourceID else { return false }
+        return !inputSources.contains { $0.id == id }
+    }
+
     public var body: some View {
         VStack(spacing: 0) {
             HeaderView(store: store)
@@ -82,14 +88,27 @@ public struct SettingsView: View {
                     title: L10n.t("settings.defaultInputSource.title"),
                     subtitle: L10n.t("settings.defaultInputSource.subtitle")
                 ) {
-                    AutoInputMenu(
-                        items: [AutoInputMenu.Item(name: L10n.t("settings.defaultInputSource.none"), value: nil)]
-                            + inputSources.map { AutoInputMenu.Item(name: $0.name, value: $0.id) },
-                        selection: store.defaultInputSourceID,
-                        placeholder: L10n.t("settings.defaultInputSource.none"),
-                        fixedWidth: 170
-                    ) { newID in
-                        store.defaultInputSourceID = newID
+                    HStack(spacing: 6) {
+                        if defaultInputSourceUnavailable {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.orange)
+                                .help(L10n.t("settings.inputSource.unavailable.help"))
+                                .accessibilityLabel(
+                                    L10n.t("settings.inputSource.unavailable", store.defaultInputSourceID ?? "")
+                                )
+                        }
+                        AutoInputMenu(
+                            items: [AutoInputMenu.Item(name: L10n.t("settings.defaultInputSource.none"), value: nil)]
+                                + inputSources.map { AutoInputMenu.Item(name: $0.name, value: $0.id) },
+                            selection: store.defaultInputSourceID,
+                            placeholder: defaultInputSourceUnavailable
+                                ? L10n.t("settings.inputSource.unavailable", store.defaultInputSourceID ?? "")
+                                : L10n.t("settings.defaultInputSource.none"),
+                            fixedWidth: 170
+                        ) { newID in
+                            store.defaultInputSourceID = newID
+                        }
                     }
                     .opacity(store.autoSwitchEnabled ? 1 : 0.5)
                     .disabled(!store.autoSwitchEnabled)

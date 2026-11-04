@@ -43,6 +43,8 @@
 "settings.rule.deleteConfirm" = "再次点击确定删除 %@";
 "settings.rule.inputSource.help" = "点击下拉切换该应用的输入法";
 "settings.inputSource.choose" = "选择输入法";
+"settings.inputSource.unavailable" = "%@（不可用）";
+"settings.inputSource.unavailable.help" = "这个输入法已不在系统输入源里，这条规则不会生效。请重新选择。";
 
 /* 添加规则 */
 "settings.add.title" = "添加应用规则";

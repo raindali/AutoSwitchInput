@@ -23,6 +23,10 @@ struct RuleRow: View {
         self.onChangeInputSource = onChangeInputSource
     }
 
+    private var isInputSourceAvailable: Bool {
+        inputSources.contains { $0.id == rule.inputSourceID }
+    }
+
     var body: some View {
         let deleteLabel = pendingDelete
             ? L10n.t("settings.rule.deleteConfirm", rule.appName)
@@ -73,10 +77,20 @@ struct RuleRow: View {
                     .accessibilityLabel(deleteLabel)
                     .help(deleteLabel)
 
+                    if !isInputSourceAvailable {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.orange)
+                            .help(L10n.t("settings.inputSource.unavailable.help"))
+                            .accessibilityLabel(L10n.t("settings.inputSource.unavailable", rule.inputSourceName))
+                    }
+
                     AutoInputMenu(
                         items: inputSources.map { AutoInputMenu.Item(name: $0.name, value: $0.id) },
                         selection: rule.inputSourceID,
-                        placeholder: L10n.t("settings.inputSource.choose"),
+                        placeholder: isInputSourceAvailable
+                            ? L10n.t("settings.inputSource.choose")
+                            : L10n.t("settings.inputSource.unavailable", rule.inputSourceName),
                         fixedWidth: 170
                     ) { newID in
                         if let newID, newID != rule.inputSourceID {

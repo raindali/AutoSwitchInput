@@ -43,6 +43,8 @@
 "settings.rule.deleteConfirm" = "Click again to delete %@";
 "settings.rule.inputSource.help" = "Click to change this app's input source";
 "settings.inputSource.choose" = "Choose input source";
+"settings.inputSource.unavailable" = "%@ (unavailable)";
+"settings.inputSource.unavailable.help" = "This input method is no longer enabled in macOS, so the rule does nothing. Choose another one.";
 
 /* 添加规则 */
 "settings.add.title" = "Add app rule";
