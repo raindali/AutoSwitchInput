@@ -18,6 +18,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 凭据历史扫描需要完整历史，浅克隆只看得到最后一个提交
+          fetch-depth: 0
 
       - name: Show toolchain
         run: swift --version

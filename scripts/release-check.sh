@@ -54,8 +54,12 @@ else
     pass "git 历史里没有凭据类文件"
 fi
 
-# 注意：pickaxe 的字符串不要写全，否则本脚本自己会被上面的 grep 命中
-HISTORY_KEYS="$(git log --all --oneline -S'BEGIN RSA PRIVATE' -S'BEGIN PRIVATE' -S'BEGIN OPENSSH PRIVATE' 2>/dev/null | head -3 || true)"
+# 注意两点：
+#   1. pickaxe 的字符串不要写全，否则本脚本自己会被上面的 grep 命中；
+#   2. 本脚本自身也被排除，否则「添加这个守卫」的那次提交会命中自己。
+HISTORY_KEYS="$(git log --all --oneline \
+    -S'BEGIN RSA PRIVATE' -S'BEGIN PRIVATE' -S'BEGIN OPENSSH PRIVATE' \
+    -- . ':!scripts/release-check.sh' 2>/dev/null | head -3 || true)"
 if [ -n "$HISTORY_KEYS" ]; then
     fail "git 历史里出现过私钥内容："
     printf '%s\n' "$HISTORY_KEYS" | sed 's/^/      /'
