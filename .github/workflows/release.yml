@@ -46,9 +46,6 @@ jobs:
             echo "mode=adhoc" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Test
-        run: swift test
-
       # 先跑自检（凭据泄露 / 产物隐私 / 架构约束），此时还是 ad-hoc 构建
       - name: Pre-release checks
         run: ./scripts/release-check.sh
@@ -120,7 +117,6 @@ jobs:
             SIGN_IDENTITY="$IDENTITY" SIGN_KEYCHAIN="$KEYCHAIN" ./build.sh --no-install
           fi
 
-      # 签完立刻销毁签名身份：后续步骤（公证 / 打包 / 上传）都不需要私钥。
       - name: Discard signing identity
         if: always() && steps.mode.outputs.mode != 'adhoc'
         run: |
@@ -209,9 +205,3 @@ jobs:
           name: AutoSwitchInput-${{ steps.mode.outputs.mode }}
           path: dist/*
           retention-days: 7
-
-      - name: Cleanup keychain
-        if: always() && steps.mode.outputs.mode != 'adhoc'
-        run: |
-          security delete-keychain "$RUNNER_TEMP/build.keychain-db" || true
-          rm -f "$RUNNER_TEMP/cert.p12"

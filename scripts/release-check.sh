@@ -29,11 +29,10 @@ warn() { echo "  ${YELLOW}!${RESET} $1"; }
 fail() { echo "  ${RED}✗${RESET} $1"; FAILED=1; }
 
 echo "${BOLD}== 1. 凭据泄露检查 ==="
-# 与 .gitignore 的凭据段保持一致；新增类型时只改这一处
-SECRET_PATTERN='\.(p12|pfx|cer|p8|mobileprovision|provisionprofile|key|pem)$|(^|/)ExportOptions\.plist$|sparkle_private_key|\.xcarchive(/|$)'
-SECRET_FILES="$(git ls-files | grep -E "$SECRET_PATTERN" || true)"
+# 忽略规则只维护在 .gitignore 一处，这里直接问 git，避免两份 pattern 漂移
+SECRET_FILES="$(git ls-files -ci --exclude-standard || true)"
 if [ -n "$SECRET_FILES" ]; then
-    fail "仓库里有凭据类文件被跟踪："
+    fail "仓库里有被 .gitignore 忽略的文件被跟踪（凭据 / 产物）："
     echo "$SECRET_FILES" | sed 's/^/      /'
 else
     pass "没有被跟踪的签名 / 公证凭据文件"
@@ -46,12 +45,13 @@ else
 fi
 
 # 只看工作树不够：提交过又被删掉的凭据仍会随仓库分发（公开仓库尤其致命）。
-HISTORY_FILES="$(git rev-list --all --objects 2>/dev/null | awk 'NF > 1 {print $2}' | grep -E "$SECRET_PATTERN" | sort -u || true)"
+HISTORY_FILES="$(git rev-list --all --objects 2>/dev/null | awk 'NF > 1 {print $2}' \
+    | git check-ignore --no-index --stdin 2>/dev/null | sort -u || true)"
 if [ -n "$HISTORY_FILES" ]; then
-    fail "git 历史里出现过凭据类文件（即使已删除仍可被 clone 到）："
+    fail "git 历史里出现过被 .gitignore 忽略的文件（即使已删除仍可被 clone 到）："
     printf '%s\n' "$HISTORY_FILES" | head -5 | sed 's/^/      /'
 else
-    pass "git 历史里没有凭据类文件"
+    pass "git 历史里没有被忽略的凭据 / 产物文件"
 fi
 
 # 注意两点：
@@ -85,7 +85,6 @@ fi
 
 echo
 echo "${BOLD}== 3. 构建 ==="
-swift build -c release >/dev/null 2>&1 || { fail "swift build 失败"; exit 1; }
 swift test >/dev/null 2>&1 || { fail "swift test 失败"; exit 1; }
 pass "编译与测试通过"
 ./build.sh --no-install >/dev/null 2>&1 || { fail "打包失败"; exit 1; }
@@ -94,22 +93,20 @@ pass "打包成功"
 echo
 echo "${BOLD}== 4. 产物隐私检查 ==="
 LOCAL_USER="$(whoami)"
-BINARY_STRINGS="$(strings -a "$APP_NAME.app/Contents/MacOS/$APP_NAME" \
-    "$APP_NAME.app/Contents/MacOS/${APP_NAME}Settings" 2>/dev/null || true)"
-HITS="$(printf '%s\n' "$BINARY_STRINGS" | grep -E "/Users/|/home/" | sort -u || true)"
-case "$BINARY_STRINGS" in
-    *"/Users/"*|*"/home/"*)
-        fail "二进制里含有本机路径，发布前需要确认："
-        printf '%s\n' "$HITS" | head -5 | sed 's/^/      /'
-        ;;
-    *"$LOCAL_USER"*)
-        # 只警告：CI runner 的用户名（runner）可能恰好是某些字符串的子串
-        warn "二进制里出现了当前用户名（${LOCAL_USER}），请确认不是路径泄露"
-        ;;
-    *)
-        pass "二进制里没有本机路径 / 用户名"
-        ;;
-esac
+# 落临时文件而不是塞进变量：两个二进制的字符串表有数 MB，回灌 grep 会把负载复制两份
+STRINGS_FILE="$(mktemp "${TMPDIR:-/tmp}/asi-strings.XXXXXX")"
+trap 'rm -f "$STRINGS_FILE"' EXIT
+strings -a "$APP_NAME.app/Contents/MacOS/$APP_NAME" \
+    "$APP_NAME.app/Contents/MacOS/${APP_NAME}Settings" > "$STRINGS_FILE" 2>/dev/null || true
+if grep -q -E "/Users/|/home/" "$STRINGS_FILE"; then
+    fail "二进制里含有本机路径，发布前需要确认："
+    grep -E "/Users/|/home/" "$STRINGS_FILE" | sort -u | head -5 | sed 's/^/      /'
+elif grep -qF "$LOCAL_USER" "$STRINGS_FILE"; then
+    # 只警告：CI runner 的用户名（runner）可能恰好是某些字符串的子串
+    warn "二进制里出现了当前用户名（${LOCAL_USER}），请确认不是路径泄露"
+else
+    pass "二进制里没有本机路径 / 用户名"
+fi
 
 echo
 echo "${BOLD}== 4b. 常驻内存 ==="

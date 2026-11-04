@@ -3,18 +3,12 @@ import SwiftUI
 import AutoSwitchInputCore
 import AutoSwitchInputUI
 
-/// 设置窗口进程的 delegate（由菜单栏进程以 `--settings` 参数拉起）。
-///
-/// 独立进程的意义：SwiftUI 的 AttributeGraph / DisplayList、图标与文字渲染缓存、
-/// 窗口后备存储全部只存在于这个短命进程里。窗口一关进程即退出，常驻的菜单栏进程
-/// 始终保持在 ~12 MB，不会再因为「开过一次设置」而长期多占 ~20 MB。
 @MainActor
-final class SettingsAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class SettingsAppDelegate: NSObject, NSApplicationDelegate {
 
     private var window: NSWindow?
     private var hostingController: NSHostingController<SettingsView>?
     private var keyMonitor: Any?
-    /// 监听菜单栏进程（父进程）退出，父进程没了就跟着退出，避免留下孤儿窗口。
     private var parentSource: DispatchSourceProcess?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -27,7 +21,6 @@ final class SettingsAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         window?.makeKeyAndOrderFront(nil)
     }
 
-    /// 只有一个窗口，关掉就退出整个进程。
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true
     }
@@ -70,7 +63,6 @@ final class SettingsAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         window.title = L10n.t("settings.window.title")
         window.center()
         window.isReleasedWhenClosed = false
-        window.delegate = self
         self.window = window
     }
 
@@ -95,7 +87,7 @@ final class SettingsAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     // MARK: - 父进程
 
     private func watchParentProcess() {
-        guard let raw = ProcessInfo.processInfo.environment["ASI_PARENT_PID"],
+        guard let raw = ProcessInfo.processInfo.environment[AppMode.parentPIDKey],
               let pid = pid_t(raw) else { return }
         let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
         source.setEventHandler {

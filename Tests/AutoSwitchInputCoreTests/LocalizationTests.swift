@@ -1,11 +1,6 @@
 import XCTest
 @testable import AutoSwitchInputCore
 
-/// 本地化表的一致性检查：
-/// 1. en / zh-Hans 两份表的 key 必须完全一致；
-/// 2. 代码里用到的 key 必须在表里存在（防拼写错误）；
-/// 3. 表里不能有代码已不再使用的 key（防残留）；
-/// 4. 不能有空翻译。
 final class LocalizationTests: XCTestCase {
 
     private static let packageRoot = URL(fileURLWithPath: #filePath)
@@ -13,21 +8,27 @@ final class LocalizationTests: XCTestCase {
         .deletingLastPathComponent()   // Tests
         .deletingLastPathComponent()   // 包根目录
 
-    private func table(_ language: String) throws -> [String: String] {
-        let url = Self.packageRoot
-            .appendingPathComponent("Resources/\(language).lproj/Localizable.strings")
-        let data = try Data(contentsOf: url)
-        let plist = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
-        let dict = try XCTUnwrap(plist as? [String: String], "\(language) 不是有效的字符串表")
-        return dict
-    }
+    private static let tables: [String: [String: String]?] = {
+        var result: [String: [String: String]?] = [:]
+        for language in ["en", "zh-Hans"] {
+            let url = packageRoot
+                .appendingPathComponent("Resources/\(language).lproj/Localizable.strings")
+            let data = try? Data(contentsOf: url)
+            let plist = data.flatMap {
+                try? PropertyListSerialization.propertyList(from: $0, options: [], format: nil)
+            }
+            result[language] = plist as? [String: String]
+        }
+        return result
+    }()
 
-    /// 扫描源码里所有形如 "menu.xxx" / "settings.xxx" / "statusItem.xxx" 的 key。
-    private func keysUsedInCode() throws -> Set<String> {
-        let sources = Self.packageRoot.appendingPathComponent("Sources")
-        let pattern = try NSRegularExpression(pattern: #""((?:menu|settings|statusItem|alert)\.[A-Za-z0-9.]+)""#)
+    private static let usedKeys: Set<String>? = {
+        let sources = packageRoot.appendingPathComponent("Sources")
+        guard let pattern = try? NSRegularExpression(
+            pattern: #""((?:menu|settings|statusItem|alert)\.[A-Za-z0-9.]+)""#
+        ) else { return nil }
+
         var keys = Set<String>()
-
         let enumerator = FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil)
         while let file = enumerator?.nextObject() as? URL {
             guard file.pathExtension == "swift",
@@ -41,6 +42,14 @@ final class LocalizationTests: XCTestCase {
             }
         }
         return keys
+    }()
+
+    private func table(_ language: String) throws -> [String: String] {
+        try XCTUnwrap(Self.tables[language] ?? nil, "\(language) 不是有效的字符串表")
+    }
+
+    private func keysUsedInCode() throws -> Set<String> {
+        try XCTUnwrap(Self.usedKeys, "扫描源码 key 失败")
     }
 
     func testLanguageTablesHaveIdenticalKeys() throws {

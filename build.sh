@@ -41,8 +41,6 @@ rm -rf "$BUNDLE_DIR"
 mkdir -p "$BUNDLE_DIR/Contents/MacOS"
 mkdir -p "$BUNDLE_DIR/Contents/Resources"
 
-# 菜单栏进程与设置进程是两个独立可执行文件：
-# 前者只链接 Core（不含 SwiftUI），后者才链接 SwiftUI，关窗即退出。
 cp "$BIN_DIR/$APP_NAME" "$BUNDLE_DIR/Contents/MacOS/$APP_NAME"
 cp "$BIN_DIR/$SETTINGS_NAME" "$BUNDLE_DIR/Contents/MacOS/$SETTINGS_NAME"
 echo "  -> Executables copied"

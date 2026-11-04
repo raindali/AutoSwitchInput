@@ -10,18 +10,13 @@ enum Design {
     static let spacing4: CGFloat = 16
     static let spacing5: CGFloat = 20
     static let spacing6: CGFloat = 24
-    static let spacing8: CGFloat = 32
 
     // 圆角（Tahoe 液态玻璃：圆角更大、更柔和）
     static let radiusSm: CGFloat = 10
     static let radiusMd: CGFloat = 14
-    static let radiusLg: CGFloat = 20
 
     // 表面与描边（自动适配浅/深色）
-    static var cardBackground: some ShapeStyle { Color(nsColor: .textBackgroundColor) }
-    static var cardBorder: some ShapeStyle { Color(nsColor: .separatorColor).opacity(0.6) }
     static var rowBackground: some ShapeStyle { Color(nsColor: .controlBackgroundColor) }
-    static var fieldBackground: some ShapeStyle { Color(nsColor: .controlBackgroundColor) }
 
     /// 强调色：深灰（替换系统蓝，页面整体更沉稳、不刺眼）。
     /// Toggle 开态、Picker 选中、按钮、Header 方块、sheet 内 globe 均跟随此色。
@@ -49,26 +44,6 @@ struct IconTile: View {
                     .font(.system(size: size * 0.44, weight: .medium))
                     .foregroundStyle(tint)
             )
-    }
-}
-
-/// 分区卡片容器：统一内边距、表面、描边与轻微投影。
-struct Card<Content: View>: View {
-    let content: Content
-    init(@ViewBuilder content: () -> Content) { self.content = content() }
-
-    var body: some View {
-        content
-            .padding(Design.spacing5)
-            .background(
-                RoundedRectangle(cornerRadius: Design.radiusMd, style: .continuous)
-                    .fill(Design.cardBackground)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Design.radiusMd, style: .continuous)
-                            .stroke(Design.cardBorder, lineWidth: 1)
-                    )
-            )
-            .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 1)
     }
 }
 
@@ -152,38 +127,4 @@ struct GlassRow<Content: View>: View {
             .animation(.easeOut(duration: 0.15), value: hovering)
             .onHover { hovering = $0 }
     }
-}
-
-/// 应用图标缓存：规则列表每次重绘都会取图标，
-/// 旧实现每次都走 LaunchServices 查找 + 读盘，缓存后只查一次。
-@MainActor
-private enum AppIconCache {
-    static var storage: [String: NSImage] = [:]
-    /// 缓存条数上限；超过就整体清空，避免规则很多时无限增长。
-    static let limit = 64
-    /// 调用方最大渲染 36 pt，按 2x 降采样即可，不必保留全分辨率图标。
-    static let targetSize = NSSize(width: 72, height: 72)
-
-    static func icon(for bundleID: String) -> NSImage? {
-        if let cached = storage[bundleID] { return cached }
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
-
-        let full = NSWorkspace.shared.icon(forFile: url.path)
-        let resized = NSImage(size: targetSize, flipped: false) { rect in
-            full.draw(in: rect)
-            return true
-        }
-        if storage.count >= limit { storage.removeAll(keepingCapacity: true) }
-        storage[bundleID] = resized
-        return resized
-    }
-}
-
-/// 解析应用图标：按 Bundle ID 取真实图标，失败回退到系统 app 符号。
-@MainActor
-func appIcon(for bundleID: String) -> Image {
-    if let icon = AppIconCache.icon(for: bundleID) {
-        return Image(nsImage: icon)
-    }
-    return Image(systemName: "app.fill")
 }

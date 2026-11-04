@@ -19,7 +19,6 @@ struct AddRuleSheet: View {
     @State private var manualBundleID: String = ""
     @State private var manualAppName: String = ""
     @State private var useManual = false
-    /// 打开 sheet 时抓一次运行中应用快照；旧实现每次重绘都重新枚举所有进程。
     @State private var runningApps: [NSRunningApplication] = []
     @Environment(\.dismiss) var dismiss
 
@@ -279,12 +278,11 @@ struct AddRuleSheet: View {
     }
 
     private func addRule() {
-        let name = inputSources.first { $0.id == selectedInputSourceID }?.name ?? ""
         store.rules.append(AppRule(
             bundleIdentifier: finalBundleID,
             appName: finalAppName,
             inputSourceID: selectedInputSourceID,
-            inputSourceName: name
+            inputSourceName: selectedInputSourceName
         ))
         dismiss()
     }

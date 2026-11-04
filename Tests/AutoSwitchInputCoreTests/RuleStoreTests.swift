@@ -1,6 +1,15 @@
 import XCTest
 @testable import AutoSwitchInputCore
 
+private final class CountingDefaults: UserDefaults {
+    var setCount = 0
+
+    override func set(_ value: Any?, forKey defaultName: String) {
+        setCount += 1
+        super.set(value, forKey: defaultName)
+    }
+}
+
 @MainActor
 final class RuleStoreTests: XCTestCase {
     private var suiteName = ""
@@ -23,7 +32,6 @@ final class RuleStoreTests: XCTestCase {
         RuleStore(defaults: defaults, syncsAcrossProcesses: false, managesLaunchAtLogin: false)
     }
 
-    /// 模拟另一个进程写入完整快照。
     private func writeSnapshot(_ snapshot: PersistedSettings) {
         defaults.set(try! JSONEncoder().encode(snapshot), forKey: "settingsSnapshot")
     }
@@ -36,7 +44,6 @@ final class RuleStoreTests: XCTestCase {
         XCTAssertEqual(store.rules.map(\.bundleIdentifier), RuleStore.defaultRules().map(\.bundleIdentifier))
     }
 
-    /// 回归：默认规则必须落盘。否则用户一次都不改设置，下次启动读不到 appRules 就全丢了。
     func testSeededRulesSurviveRelaunch() {
         _ = makeStore()
         let relaunched = makeStore()
@@ -84,20 +91,16 @@ final class RuleStoreTests: XCTestCase {
         XCTAssertNil(store.rule(for: "com.missing"))
     }
 
-    /// 损坏的数据不应该让 App 崩溃：解不出来就退回默认规则，并重新落盘。
     func testCorruptedRulesDataFallsBackToDefaults() {
         defaults.set(Data("not json".utf8), forKey: "appRules")
-        defaults.set(true, forKey: "hasLaunchedBefore")
 
         let store = makeStore()
-        // AppRule.id 是随机 UUID，比较业务字段而不是整条记录
         XCTAssertEqual(store.rules.map(\.bundleIdentifier), RuleStore.defaultRules().map(\.bundleIdentifier))
         XCTAssertNotNil(defaults.data(forKey: "settingsSnapshot"))
     }
 
     // MARK: - 跨进程同步
 
-    /// 模拟另一个进程写入 UserDefaults 后，本进程重新读取。
     func testReloadFromDefaultsPicksUpExternalChanges() {
         let store = makeStore()
         XCTAssertTrue(store.autoSwitchEnabled)
@@ -124,38 +127,33 @@ final class RuleStoreTests: XCTestCase {
         XCTAssertEqual(store.rules, [external])
     }
 
-    /// reload 不应该反过来触发保存（否则两个进程会互相通知形成回环）。
     func testReloadDoesNotWriteBack() {
-        let store = makeStore()
-        store.rules = [
-            AppRule(bundleIdentifier: "com.local", appName: "Local", inputSourceID: "id", inputSourceName: "n")
-        ]
+        let counting = CountingDefaults(suiteName: suiteName)!
+        let store = RuleStore(defaults: counting, syncsAcrossProcesses: false, managesLaunchAtLogin: false)
+        counting.setCount = 0
 
-        // 另一个进程写入后本进程 reload
         let external = AppRule(
             bundleIdentifier: "com.external",
             appName: "External",
             inputSourceID: "id2",
             inputSourceName: "n2"
         )
-        let snapshot = PersistedSettings(
-            autoSwitchEnabled: true,
-            rules: [external],
-            defaultInputSourceID: nil,
-            launchAtLogin: false
+        writeSnapshot(
+            PersistedSettings(
+                autoSwitchEnabled: true,
+                rules: [external],
+                defaultInputSourceID: nil,
+                launchAtLogin: false
+            )
         )
-        writeSnapshot(snapshot)
         store.reloadFromDefaults()
-        XCTAssertEqual(store.rules, [external])
 
-        // reload 后再读一次 defaults，内容应仍是外部写入的那份（没有被回写成别的）
-        let data = defaults.data(forKey: "settingsSnapshot")!
-        XCTAssertEqual(try JSONDecoder().decode(PersistedSettings.self, from: data), snapshot)
+        XCTAssertEqual(store.rules, [external])
+        XCTAssertEqual(counting.setCount, 0, "reload 不应触发保存，否则两个进程会互相通知形成回环")
     }
 
     // MARK: - 跨进程同步（快照直传）
 
-    /// 通知里携带的快照应被直接应用，不依赖再次读盘（规避 cfprefsd 与通知的时序问题）。
     func testRemoteSnapshotAppliedWithoutReReadingDefaults() {
         let store = makeStore()
         let external = AppRule(
@@ -170,7 +168,6 @@ final class RuleStoreTests: XCTestCase {
             defaultInputSourceID: "com.apple.keylayout.US",
             launchAtLogin: false
         )
-        // 故意不写 defaults：应用快照不应依赖磁盘内容
         store.applyRemoteSnapshot(try! JSONEncoder().encode(snapshot))
 
         XCTAssertFalse(store.autoSwitchEnabled)
@@ -178,7 +175,6 @@ final class RuleStoreTests: XCTestCase {
         XCTAssertEqual(store.defaultInputSourceID, "com.apple.keylayout.US")
     }
 
-    /// 自己发出的通知必须被忽略，否则两个属性赋值会来回触发。
     func testIgnoresNotificationsFromSelf() {
         let store = makeStore()
         let own = Int(ProcessInfo.processInfo.processIdentifier)
@@ -186,7 +182,6 @@ final class RuleStoreTests: XCTestCase {
         XCTAssertTrue(store.acceptsRemoteChange(fromPID: own &+ 1))
     }
 
-    /// 远端变更应用后要通知调用方重放当前 App（否则改完规则要切走再切回）。
     func testRemoteChangeInvokesCallback() {
         let store = makeStore()
         var called = 0
@@ -225,11 +220,9 @@ final class RuleStoreTests: XCTestCase {
 
     // MARK: - 迁移与播种
 
-    /// 1.0 的四个散装 key 应被读进来，并在下次保存时收成快照。
     func testLegacyKeysMigrateIntoSnapshot() {
         defaults.set(false, forKey: "autoSwitchEnabled")
         defaults.set("com.apple.keylayout.US", forKey: "defaultInputSourceID")
-        defaults.set(true, forKey: "hasLaunchedBefore")
         let legacyRule = AppRule(
             bundleIdentifier: "com.legacy", appName: "Legacy", inputSourceID: "id", inputSourceName: "n"
         )
@@ -239,19 +232,17 @@ final class RuleStoreTests: XCTestCase {
         XCTAssertFalse(store.autoSwitchEnabled)
         XCTAssertEqual(store.rules, [legacyRule])
         XCTAssertEqual(store.defaultInputSourceID, "com.apple.keylayout.US")
-        // 保存后旧 key 被清理
         XCTAssertNil(defaults.data(forKey: "appRules"))
         XCTAssertNotNil(defaults.data(forKey: "settingsSnapshot"))
     }
 
-    /// 回归：1.0 升级上来的用户（hasLaunchedBefore=true、从未落盘规则）也要拿到默认规则。
     func testSeedsRulesForUpgradedUserWhoNeverPersistedThem() {
-        defaults.set(true, forKey: "hasLaunchedBefore")
+        defaults.set(false, forKey: "autoSwitchEnabled")
         let store = makeStore()
         XCTAssertEqual(store.rules.count, RuleStore.defaultRules().count)
+        XCTAssertFalse(store.autoSwitchEnabled)
     }
 
-    /// 用户主动删空规则（留下非 nil 的空数组）不应被重新播种。
     func testDoesNotReseedAfterUserClearedRules() {
         let first = makeStore()
         first.rules = []

@@ -23,6 +23,7 @@ Resources/icon_src/A_*.png
 *.p12
 *.pfx
 *.cer
+*.p8
 *.mobileprovision
 *.provisionprofile
 *.key

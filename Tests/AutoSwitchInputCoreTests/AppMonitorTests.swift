@@ -6,7 +6,6 @@ final class AppMonitorTests: XCTestCase {
 
     private let ownBundleID = "com.example.self"
 
-    /// 让主队列跑一段时间，用于确认「没有额外回调」。
     private func settle(_ seconds: TimeInterval) {
         let done = expectation(description: "settle \(seconds)s")
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { done.fulfill() }
@@ -20,7 +19,6 @@ final class AppMonitorTests: XCTestCase {
             received.append((bundleID, name))
         }
 
-        // 快速连切三个 App：防抖只应保留最后一个
         monitor.handleActivation(bundleID: "com.a", name: "A")
         monitor.handleActivation(bundleID: "com.b", name: "B")
         monitor.handleActivation(bundleID: "com.c", name: "C")
@@ -38,14 +36,13 @@ final class AppMonitorTests: XCTestCase {
         monitor.onAppChange = { _, _ in count += 1 }
 
         monitor.handleActivation(bundleID: "com.a", name: "A")
+        settle(0.15)
         monitor.handleActivation(bundleID: "com.a", name: "A")
-
-        settle(0.25)
+        settle(0.2)
 
         XCTAssertEqual(count, 1)
     }
 
-    /// 设置窗口是独立进程但同 bundle id，打开设置不应把「当前应用」变成自己。
     func testIgnoresOwnBundleIdentifier() {
         let monitor = AppMonitor(debounce: 0.05, ownBundleID: ownBundleID)
         let notFired = expectation(description: "no callback")

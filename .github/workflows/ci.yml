@@ -25,7 +25,5 @@ jobs:
       - name: Show toolchain
         run: swift --version
 
-      # 构建、测试、打包与全部架构 / 凭据断言都收在同一个脚本里，
-      # 避免 CI 与发布前自检各维护一份、逐渐漂移。
       - name: Pre-release checks
         run: ./scripts/release-check.sh

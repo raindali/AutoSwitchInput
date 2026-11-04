@@ -55,10 +55,6 @@ public final class AppMonitor {
         pendingChange = nil
     }
 
-    /// 处理一次前台应用激活（通知回调与单元测试共用同一入口）。
-    ///
-    /// 只在真正换 App 时触发；忽略自身 bundle id —— 设置窗口是独立进程，
-    /// 打开设置时不应该把「当前应用」变成 AutoSwitchInput 自己。
     func handleActivation(bundleID: String, name: String) {
         guard bundleID != currentBundleID, bundleID != ownBundleID else { return }
         currentBundleID = bundleID
@@ -66,7 +62,6 @@ public final class AppMonitor {
         Log.monitor.debug("前台应用切换: \(bundleID, privacy: .public)")
 
         // Debounce: wait a beat to skip rapid app switching.
-        // 用一次性 DispatchWorkItem 代替 Timer：不注册 RunLoop 源，切换时也不额外分配对象。
         pendingChange?.cancel()
         let work = DispatchWorkItem { [weak self] in
             self?.pendingChange = nil

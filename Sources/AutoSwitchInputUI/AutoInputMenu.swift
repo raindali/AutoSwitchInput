@@ -10,16 +10,20 @@ struct AutoInputMenu: View {
     struct Item: Identifiable {
         let name: String
         let value: String?
-        let isSelected: Bool
         var id: String { name }
     }
 
     let items: [Item]
-    let selectedName: String
+    let selection: String?
+    var placeholder: String
     var fixedWidth: CGFloat = 240
     var onSelect: (String?) -> Void = { _ in }
 
     @State private var isOpen = false
+
+    private var selectedName: String {
+        items.first { $0.value == selection }?.name ?? placeholder
+    }
 
     var body: some View {
         Button {
@@ -62,7 +66,7 @@ struct AutoInputMenu: View {
                             Text(item.name)
                                 .font(.body)
                             Spacer(minLength: 8)
-                            if item.isSelected {
+                            if item.value == selection {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(Color.accentColor)

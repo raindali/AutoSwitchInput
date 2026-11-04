@@ -10,9 +10,6 @@ public enum L10n {
     }
 
     public static func t(_ key: String, _ arguments: CVarArg...) -> String {
-        String(
-            format: NSLocalizedString(key, tableName: "Localizable", bundle: .main, value: key, comment: ""),
-            arguments: arguments
-        )
+        String(format: t(key), arguments: arguments)
     }
 }

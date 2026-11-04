@@ -83,12 +83,10 @@ public struct SettingsView: View {
                     subtitle: L10n.t("settings.defaultInputSource.subtitle")
                 ) {
                     AutoInputMenu(
-                        items: [
-                            AutoInputMenu.Item(name: L10n.t("settings.defaultInputSource.none"), value: nil, isSelected: store.defaultInputSourceID == nil),
-                        ] + inputSources.map { source in
-                            AutoInputMenu.Item(name: source.name, value: source.id, isSelected: store.defaultInputSourceID == source.id)
-                        },
-                        selectedName: (store.defaultInputSourceID.flatMap { id in inputSources.first { $0.id == id }?.name }) ?? L10n.t("settings.defaultInputSource.none"),
+                        items: [AutoInputMenu.Item(name: L10n.t("settings.defaultInputSource.none"), value: nil)]
+                            + inputSources.map { AutoInputMenu.Item(name: $0.name, value: $0.id) },
+                        selection: store.defaultInputSourceID,
+                        placeholder: L10n.t("settings.defaultInputSource.none"),
                         fixedWidth: 170
                     ) { newID in
                         store.defaultInputSourceID = newID
@@ -173,8 +171,10 @@ public struct SettingsView: View {
                                 },
                                 onChangeInputSource: { newID in
                                     if let idx = store.rules.firstIndex(where: { $0.id == rule.id }) {
-                                        store.rules[idx].inputSourceID = newID
-                                        store.rules[idx].inputSourceName = InputMethodManager.shared.name(for: newID)
+                                        var updated = store.rules[idx]
+                                        updated.inputSourceID = newID
+                                        updated.inputSourceName = InputMethodManager.shared.name(for: newID)
+                                        store.rules[idx] = updated
                                     }
                                 }
                             )
@@ -226,12 +226,8 @@ public struct SettingsView: View {
     }
 
     private func removeRule(_ rule: AppRule) {
-        if reduceMotion {
+        withAnimation(motion) {
             store.rules.removeAll { $0.id == rule.id }
-        } else {
-            withAnimation(.easeOut(duration: 0.2)) {
-                store.rules.removeAll { $0.id == rule.id }
-            }
         }
     }
 }

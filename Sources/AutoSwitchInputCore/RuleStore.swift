@@ -46,23 +46,24 @@ public final class RuleStore: ObservableObject {
     /// 菜单栏进程用它把当前前台 App 的规则重放一遍（否则改完规则要切走再切回来才生效）。
     public var onRemoteChange: (() -> Void)?
 
+    private enum Keys {
+        static let snapshot = "settingsSnapshot"
+        static let legacyRules = "appRules"
+        static let legacyEnabled = "autoSwitchEnabled"
+        static let legacyDefault = "defaultInputSourceID"
+        static let legacyLaunch = "launchAtLogin"
+    }
+
     private let defaults: UserDefaults
     /// 是否与另一个进程互发变更通知（单元测试里关掉，避免相互干扰）。
     private let syncsAcrossProcesses: Bool
     /// 是否由本进程写系统登录项（单元测试里关掉，避免真的注册登录项）。
     private let managesLaunchAtLogin: Bool
 
-    /// 新格式：全部设置放在一个 key 下。
-    private let settingsKey = "settingsSnapshot"
-    /// 1.0 的旧 key，仅用于一次性迁移。
-    private let legacyRulesKey = "appRules"
-    private let legacyEnabledKey = "autoSwitchEnabled"
-    private let legacyDefaultKey = "defaultInputSourceID"
-    private let legacyLaunchKey = "launchAtLogin"
-    private let firstLaunchKey = "hasLaunchedBefore"
-
     /// 正在应用来自另一个进程的变更：此时属性赋值不应再触发保存/回发通知。
     private var isApplyingRemoteChange = false
+    /// 1.0 的旧 key 只需清理一次，不必每次保存都发四个 removeObject。
+    private var legacyKeysCleaned = false
     /// 上次同步给系统的登录项状态，避免每次保存都去问 SMAppService。
     private var lastAppliedLaunchAtLogin: Bool?
     private var remoteObserver: NSObjectProtocol?
@@ -74,29 +75,23 @@ public final class RuleStore: ObservableObject {
     public init(
         defaults: UserDefaults = .standard,
         syncsAcrossProcesses: Bool = true,
-        managesLaunchAtLogin: Bool = true
+        managesLaunchAtLogin: Bool = !AppMode.isSettingsHelper
     ) {
         self.defaults = defaults
         self.syncsAcrossProcesses = syncsAcrossProcesses
         self.managesLaunchAtLogin = managesLaunchAtLogin
 
-        let loaded = Self.load(from: defaults, settingsKey: settingsKey)
+        let loaded = Self.load(from: defaults)
         autoSwitchEnabled = loaded.autoSwitchEnabled
         defaultInputSourceID = loaded.defaultInputSourceID
         launchAtLogin = loaded.launchAtLogin
         rules = loaded.rules
 
-        // 没有快照时统一处理两件事：
-        //   1. 首次启动 / 1.0 从未落盘过规则（升级）→ 补默认规则；
-        //   2. 从 1.0 的散装 key 迁移到新快照，并清掉旧 key。
-        if defaults.data(forKey: settingsKey) == nil {
+        if defaults.data(forKey: Keys.snapshot) == nil {
             if rules.isEmpty {
                 rules = RuleStore.defaultRules()
             }
-            defaults.set(true, forKey: firstLaunchKey)
             save()
-        } else if !defaults.bool(forKey: firstLaunchKey) {
-            defaults.set(true, forKey: firstLaunchKey)
         }
 
         if syncsAcrossProcesses {
@@ -122,7 +117,6 @@ public final class RuleStore: ObservableObject {
         }
     }
 
-    /// 忽略自己发出的通知（否则会回环）。
     func acceptsRemoteChange(fromPID pid: Int) -> Bool {
         pid != Int(ProcessInfo.processInfo.processIdentifier)
     }
@@ -141,8 +135,11 @@ public final class RuleStore: ObservableObject {
     private func save() {
         guard !isApplyingRemoteChange else { return }
         guard let data = try? JSONEncoder().encode(currentSnapshot()) else { return }
-        defaults.set(data, forKey: settingsKey)
-        Self.removeLegacyKeys(from: defaults)
+        defaults.set(data, forKey: Keys.snapshot)
+        if !legacyKeysCleaned {
+            Self.removeLegacyKeys(from: defaults)
+            legacyKeysCleaned = true
+        }
 
         guard syncsAcrossProcesses else { return }
         DistributedNotificationCenter.default().postNotificationName(
@@ -157,7 +154,6 @@ public final class RuleStore: ObservableObject {
         )
     }
 
-    /// 应用另一个进程推来的快照（不触发保存，避免通知回环）。
     func applyRemoteSnapshot(_ data: Data) {
         guard let snapshot = try? JSONDecoder().decode(PersistedSettings.self, from: data) else {
             Log.rules.error("跨进程快照解码失败，改为重新读取")
@@ -169,16 +165,16 @@ public final class RuleStore: ObservableObject {
 
     /// 从 UserDefaults 重新读取（用于通知未携带快照的旧版本，以及测试）。
     func reloadFromDefaults() {
-        apply(Self.load(from: defaults, settingsKey: settingsKey))
+        apply(Self.load(from: defaults))
     }
 
     private func apply(_ snapshot: PersistedSettings) {
         let changed = snapshot != currentSnapshot()
         isApplyingRemoteChange = true
-        autoSwitchEnabled = snapshot.autoSwitchEnabled
-        rules = snapshot.rules
-        defaultInputSourceID = snapshot.defaultInputSourceID
-        launchAtLogin = snapshot.launchAtLogin
+        if autoSwitchEnabled != snapshot.autoSwitchEnabled { autoSwitchEnabled = snapshot.autoSwitchEnabled }
+        if rules != snapshot.rules { rules = snapshot.rules }
+        if defaultInputSourceID != snapshot.defaultInputSourceID { defaultInputSourceID = snapshot.defaultInputSourceID }
+        if launchAtLogin != snapshot.launchAtLogin { launchAtLogin = snapshot.launchAtLogin }
         isApplyingRemoteChange = false
 
         guard changed else { return }
@@ -188,26 +184,26 @@ public final class RuleStore: ObservableObject {
 
     // MARK: - Snapshot IO
 
-    static func load(from defaults: UserDefaults, settingsKey: String) -> PersistedSettings {
-        if let data = defaults.data(forKey: settingsKey),
+    static func load(from defaults: UserDefaults) -> PersistedSettings {
+        if let data = defaults.data(forKey: Keys.snapshot),
            let snapshot = try? JSONDecoder().decode(PersistedSettings.self, from: data) {
             return snapshot
         }
         // 1.0 的四个散装 key
         return PersistedSettings(
-            autoSwitchEnabled: defaults.object(forKey: "autoSwitchEnabled") as? Bool ?? true,
-            rules: defaults.data(forKey: "appRules")
+            autoSwitchEnabled: defaults.object(forKey: Keys.legacyEnabled) as? Bool ?? true,
+            rules: defaults.data(forKey: Keys.legacyRules)
                 .flatMap { try? JSONDecoder().decode([AppRule].self, from: $0) } ?? [],
-            defaultInputSourceID: defaults.string(forKey: "defaultInputSourceID"),
-            launchAtLogin: defaults.bool(forKey: "launchAtLogin")
+            defaultInputSourceID: defaults.string(forKey: Keys.legacyDefault),
+            launchAtLogin: defaults.bool(forKey: Keys.legacyLaunch)
         )
     }
 
     private static func removeLegacyKeys(from defaults: UserDefaults) {
-        defaults.removeObject(forKey: "appRules")
-        defaults.removeObject(forKey: "autoSwitchEnabled")
-        defaults.removeObject(forKey: "defaultInputSourceID")
-        defaults.removeObject(forKey: "launchAtLogin")
+        defaults.removeObject(forKey: Keys.legacyRules)
+        defaults.removeObject(forKey: Keys.legacyEnabled)
+        defaults.removeObject(forKey: Keys.legacyDefault)
+        defaults.removeObject(forKey: Keys.legacyLaunch)
     }
 
     // MARK: - Launch at login
@@ -231,9 +227,8 @@ public final class RuleStore: ObservableObject {
         }
     }
 
-    /// 只有菜单栏进程负责写系统登录项（设置进程只改 UserDefaults 并通知）。
     private func applyLaunchAtLoginIfNeeded() {
-        guard managesLaunchAtLogin, !AppMode.isSettingsHelper else { return }
+        guard managesLaunchAtLogin else { return }
         guard lastAppliedLaunchAtLogin != launchAtLogin else { return }
         lastAppliedLaunchAtLogin = launchAtLogin
         applyLaunchAtLogin()

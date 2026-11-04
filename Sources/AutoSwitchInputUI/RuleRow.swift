@@ -10,7 +10,6 @@ struct RuleRow: View {
     let onDelete: () -> Void
     /// 下拉切换输入法时回调，参数为新的输入法 ID。
     let onChangeInputSource: (String) -> Void
-    @State private var selectedID: String
     /// 二段式删除确认：第一次点击进入确认态（变红），再点一次才真正删除。
     @State private var pendingDelete = false
 
@@ -22,11 +21,13 @@ struct RuleRow: View {
         self.inputSources = inputSources
         self.onDelete = onDelete
         self.onChangeInputSource = onChangeInputSource
-        _selectedID = State(initialValue: rule.inputSourceID)
     }
 
     var body: some View {
-        GlassRow {
+        let deleteLabel = pendingDelete
+            ? L10n.t("settings.rule.deleteConfirm", rule.appName)
+            : L10n.t("settings.rule.delete", rule.appName)
+        return GlassRow {
             HStack(spacing: Design.spacing3) {
                 appIcon(for: rule.bundleIdentifier)
                     .resizable()
@@ -69,18 +70,16 @@ struct RuleRow: View {
                     )
                     .contentShape(Rectangle())
                     .animation(.easeOut(duration: 0.15), value: pendingDelete)
-                    .accessibilityLabel(pendingDelete ? L10n.t("settings.rule.deleteConfirm", rule.appName) : L10n.t("settings.rule.delete", rule.appName))
-                    .help(pendingDelete ? L10n.t("settings.rule.deleteConfirm", rule.appName) : L10n.t("settings.rule.delete", rule.appName))
+                    .accessibilityLabel(deleteLabel)
+                    .help(deleteLabel)
 
                     AutoInputMenu(
-                        items: inputSources.map { source in
-                            AutoInputMenu.Item(name: source.name, value: source.id, isSelected: selectedID == source.id)
-                        },
-                        selectedName: inputSources.first { $0.id == selectedID }?.name ?? L10n.t("settings.inputSource.choose"),
+                        items: inputSources.map { AutoInputMenu.Item(name: $0.name, value: $0.id) },
+                        selection: rule.inputSourceID,
+                        placeholder: L10n.t("settings.inputSource.choose"),
                         fixedWidth: 170
                     ) { newID in
-                        if let newID, newID != selectedID {
-                            selectedID = newID
+                        if let newID, newID != rule.inputSourceID {
                             onChangeInputSource(newID)
                         }
                     }

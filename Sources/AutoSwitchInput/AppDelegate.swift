@@ -1,19 +1,10 @@
 import AppKit
 import AutoSwitchInputCore
 
-/// AppKit delegate for the menu-bar process.
-///
-/// 这个进程只负责菜单栏图标、右键菜单和前台应用监听，**完全不碰 SwiftUI**。
-/// 设置窗口由独立可执行文件 `AutoSwitchInputSettings` 承载（与菜单栏进程并排放在
-/// Contents/MacOS 下，以 `--settings` 启动），关窗即退出，
-/// 所以 SwiftUI 的视图图、图标/文字缓存不会滞留在常驻进程里。
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem?
-    /// 弹出菜单期间持有强引用，避免 tracking 循环结束后菜单提前释放。
-    private var statusMenu: NSMenu?
-    /// 正在运行的设置窗口进程（同一时间只保留一个）。
     private var settingsProcess: Process?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -61,8 +52,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 菜单内容按需构建：只在右键真正弹出菜单时生成。
-    /// 旧实现把整份 NSMenu 在每次前台应用切换时重建一遍，纯属浪费（菜单此时并不可见）。
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
@@ -122,20 +111,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         AppMonitor.shared.start()
 
-        // 设置进程改了规则后立刻重放当前前台 App，否则要切走再切回来才生效。
         RuleStore.shared.onRemoteChange = { [weak self] in
-            guard let self, let bundleID = AppMonitor.shared.currentBundleID else { return }
-            self.handleAppChange(bundleID: bundleID, appName: AppMonitor.shared.currentAppName ?? "")
+            self?.replayCurrentApp()
         }
 
-        // Apply rule for the app that was frontmost at launch
-        if let bundleID = AppMonitor.shared.currentBundleID {
-            handleAppChange(bundleID: bundleID, appName: AppMonitor.shared.currentAppName ?? "")
-        }
+        replayCurrentApp()
+    }
+
+    private func replayCurrentApp() {
+        guard let bundleID = AppMonitor.shared.currentBundleID else { return }
+        handleAppChange(bundleID: bundleID, appName: AppMonitor.shared.currentAppName ?? "")
     }
 
     private func handleAppChange(bundleID: String, appName: String) {
-        // 选哪个输入源的决策在 Core 里，便于单测覆盖（规则命中 / 默认兜底 / 总开关关闭）。
         guard let targetID = RuleStore.shared.targetInputSourceID(for: bundleID) else { return }
 
         if InputMethodManager.shared.selectInputSource(id: targetID) {
@@ -154,10 +142,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let isRightClick = event.type == .rightMouseUp || event.modifierFlags.contains(.control)
         if isRightClick {
             let menu = buildMenu()
-            statusMenu = menu
             let point = NSPoint(x: 0, y: NSHeight(sender.bounds) + 4)
             menu.popUp(positioning: nil, at: point, in: sender)
-            statusMenu = nil
         } else {
             showSettings()
         }
@@ -193,9 +179,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let process = Process()
         process.executableURL = helper
-        process.arguments = ["--settings"]
+        process.arguments = [AppMode.settingsArgument]
         var environment = ProcessInfo.processInfo.environment
-        environment["ASI_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
+        environment[AppMode.parentPIDKey] = String(ProcessInfo.processInfo.processIdentifier)
         process.environment = environment
         // 终止回调在后台队列，回到主 actor 再清理引用。
         // 必须校验身份：旧进程的迟到回调不能把刚拉起的新进程引用清掉。
