@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// AppKit delegate: owns the status-bar item, the menu, and the settings window.
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private var statusItem: NSStatusItem?
     private var statusMenu: NSMenu?
@@ -14,7 +14,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusBar()
         setupMonitor()
         RuleStore.shared.applyLaunchAtLogin() // 同步开机启动（登录项）状态
-        setupKeyMonitor() // ⌘W 关闭主窗口（不退出应用）
         // 纯菜单栏后台应用：启动后安静留在后台，不自动弹窗；
         // 用户点击菜单栏图标或右键菜单「设置…」时再打开主窗口。
     }
@@ -26,16 +25,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    // 部分 macOS 版本/场景下点击 Dock 走此分支，同样打开主窗口
+    // 无窗口的菜单栏应用：AppKit 启动「无文稿应用」时会询问是否打开未命名文稿。
+    // 这里必须返回 false —— 否则一启动就会把整个设置窗口建好并常驻内存。
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
-        showSettings()
-        return true
+        return false
+    }
+
+    // MARK: - 窗口生命周期
+
+    /// 窗口关闭后释放 SwiftUI 视图图（AttributeGraph / DisplayList / 图标与文字缓存）。
+    /// 只隐藏不释放的话，这些对象会一直留在菜单栏常驻进程里。
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === settingsWindow else { return }
+        removeKeyMonitor()
+        // 关闭流程（动画 / 视图移除）结束后再析构
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.settingsWindow === window else { return }
+            self.settingsWindow = nil
+            self.settingsHostingController = nil
+        }
     }
 
     // MARK: - 键盘快捷键
 
     /// ⌘W：关闭主窗口（与红圈按钮同效），应用不退出，可经 Dock 图标再次打开。
-    private func setupKeyMonitor() {
+    /// 只在窗口存在期间安装监听，关闭窗口后移除。
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.modifierFlags.contains(.command),
                event.charactersIgnoringModifiers?.lowercased() == "w" {
@@ -47,6 +63,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             return event
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
         }
     }
 
@@ -172,56 +195,54 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showSettings() {
-        // 若窗口已被用户关闭（仍在内存中但不可见且未最小化），重建一个干净窗口，
-        // 避免旧窗口残留状态导致再次点击 Dock 图标无法显示主窗口。
-        if let w = settingsWindow, !w.isVisible {
-            if w.isMiniaturized {
-                w.deminiaturize(nil)
-                return
-            }
-            w.close()
-            settingsWindow = nil
-            settingsHostingController = nil
+        // 窗口关闭时已被释放（见 windowWillClose），这里只需处理仍存在的窗口。
+        if let w = settingsWindow {
+            if w.isMiniaturized { w.deminiaturize(nil) }
+            installKeyMonitor()
+            NSApp.activate(ignoringOtherApps: true)
+            w.makeKeyAndOrderFront(nil)
+            return
         }
 
-        if settingsWindow == nil {
-            let hosting = NSHostingController(rootView: SettingsView())
-            hosting.preferredContentSize = NSSize(width: 720, height: 540)
-            settingsHostingController = hosting
+        let hosting = NSHostingController(rootView: SettingsView())
+        hosting.preferredContentSize = NSSize(width: 720, height: 540)
+        settingsHostingController = hosting
 
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 720, height: 540),
-                styleMask: [.titled, .closable, .resizable],
-                backing: .buffered,
-                defer: false
-            )
-            // 液态玻璃窗口（macOS 26 Tahoe）：
-            // 内容视图换成 NSVisualEffectView（.hudWindow 材质），SwiftUI 视图悬浮其上
-            if #available(macOS 26.0, *) {
-                window.isOpaque = false
-                window.backgroundColor = .clear
-                window.titlebarAppearsTransparent = true
-                window.styleMask.insert(.fullSizeContentView)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 540),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        // 液态玻璃窗口（macOS 26 Tahoe）：
+        // 内容视图换成 NSVisualEffectView（.hudWindow 材质），SwiftUI 视图悬浮其上
+        if #available(macOS 26.0, *) {
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.titlebarAppearsTransparent = true
+            window.styleMask.insert(.fullSizeContentView)
 
-                let effect = NSVisualEffectView()
-                effect.material = .hudWindow
-                effect.blendingMode = .behindWindow
-                effect.state = .active
-                window.contentView = effect
+            let effect = NSVisualEffectView()
+            effect.material = .hudWindow
+            effect.blendingMode = .behindWindow
+            effect.state = .active
+            window.contentView = effect
 
-                hosting.view.frame = effect.bounds
-                hosting.view.autoresizingMask = [.width, .height]
-                effect.addSubview(hosting.view)
-            } else {
-                window.contentViewController = hosting
-            }
-            window.setContentSize(NSSize(width: 720, height: 540))
-            window.contentMinSize = NSSize(width: 560, height: 420)
-            window.title = "AutoSwitchInput - 设置"
-            window.center()
-            window.isReleasedWhenClosed = false
-            settingsWindow = window
+            hosting.view.frame = effect.bounds
+            hosting.view.autoresizingMask = [.width, .height]
+            effect.addSubview(hosting.view)
+        } else {
+            window.contentViewController = hosting
         }
+        window.setContentSize(NSSize(width: 720, height: 540))
+        window.contentMinSize = NSSize(width: 560, height: 420)
+        window.title = "AutoSwitchInput - 设置"
+        window.center()
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        settingsWindow = window
+
+        installKeyMonitor()
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
