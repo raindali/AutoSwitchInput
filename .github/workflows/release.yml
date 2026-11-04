@@ -173,6 +173,14 @@ jobs:
           else
             cp docs/RELEASE_NOTES_UNSIGNED.md dist/RELEASE_NOTES.md
           fi
+
+          # 把本次发布的签名要求写进说明，用户可自行比对，而不是只能信 SHA256SUMS
+          REQ="$(codesign -d -r- AutoSwitchInput.app 2>&1 | sed -n 's/^#\{0,1\} *designated => //p')"
+          {
+            printf '\n## 校验签名身份\n\n'
+            printf '```bash\ncodesign -d -r- /Applications/AutoSwitchInput.app\n```\n\n'
+            printf '本次发布的期望输出：\n\n```\n%s\n```\n' "${REQ:-（无法读取）}"
+          } >> dist/RELEASE_NOTES.md
           ls -lh dist
 
       # ---------- 发布 ----------

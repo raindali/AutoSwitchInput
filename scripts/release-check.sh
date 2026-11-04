@@ -42,7 +42,25 @@ fi
 if git grep -I -q -E 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY'; then
     fail "仓库里出现了私钥内容（BEGIN ... PRIVATE KEY）"
 else
-    pass "没有私钥内容"
+    pass "工作树里没有私钥内容"
+fi
+
+# 只看工作树不够：提交过又被删掉的凭据仍会随仓库分发（公开仓库尤其致命）。
+HISTORY_FILES="$(git rev-list --all --objects 2>/dev/null | awk 'NF > 1 {print $2}' | grep -E "$SECRET_PATTERN" | sort -u || true)"
+if [ -n "$HISTORY_FILES" ]; then
+    fail "git 历史里出现过凭据类文件（即使已删除仍可被 clone 到）："
+    printf '%s\n' "$HISTORY_FILES" | head -5 | sed 's/^/      /'
+else
+    pass "git 历史里没有凭据类文件"
+fi
+
+# 注意：pickaxe 的字符串不要写全，否则本脚本自己会被上面的 grep 命中
+HISTORY_KEYS="$(git log --all --oneline -S'BEGIN RSA PRIVATE' -S'BEGIN PRIVATE' -S'BEGIN OPENSSH PRIVATE' 2>/dev/null | head -3 || true)"
+if [ -n "$HISTORY_KEYS" ]; then
+    fail "git 历史里出现过私钥内容："
+    printf '%s\n' "$HISTORY_KEYS" | sed 's/^/      /'
+else
+    pass "git 历史里没有私钥内容"
 fi
 
 echo
@@ -88,6 +106,16 @@ case "$BINARY_STRINGS" in
         pass "二进制里没有本机路径 / 用户名"
         ;;
 esac
+
+echo
+echo "${BOLD}== 4b. 常驻内存 ==="
+if [ -x "$PROJECT_DIR/scripts/measure-memory.sh" ]; then
+    if ! "$PROJECT_DIR/scripts/measure-memory.sh" "$APP_NAME.app/Contents/MacOS/$APP_NAME"; then
+        FAILED=1
+    fi
+else
+    warn "缺少 scripts/measure-memory.sh，跳过内存测量"
+fi
 
 echo
 echo "${BOLD}== 5. 架构与资源约束 ==="

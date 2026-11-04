@@ -28,6 +28,15 @@ macOS 的 Gatekeeper 会拦住它。三种放行方式任选其一：
 shasum -a 256 -c SHA256SUMS.txt
 ```
 
+校验和只能证明「文件没被改坏」，不能证明「来自发布者」。要确认签名身份，
+请比对 Release 说明末尾列出的 `codesign -d -r-` 输出：
+
+```bash
+codesign -d -r- /Applications/AutoSwitchInput.app
+```
+
+自签名版本会显示 `certificate leaf = H"…"`，ad-hoc 版本只有 `cdhash H"…"`。
+
 ## 介意手动放行？
 
 clone 仓库后本地编译，本机编译不经过 Gatekeeper：

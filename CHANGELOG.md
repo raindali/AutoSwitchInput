@@ -21,6 +21,9 @@
 - **CI 去重**：`ci.yml` 改为只调 `./scripts/release-check.sh`；凭据 pattern 抽成单一常量并补 `.p8` / `.xcarchive`。
 - **证书脚本不再打印私钥**：口令改为文件或交互输入（不进 argv / shell history），base64 写入 0600 文件；文档更正「自签名证书可吊销」的错误说法。
 - **UI 小修**：图标缓存降采样到 72×72 并设 64 条上限；规则列表改 `LazyVStack`；`SettingsView` / `HeaderView` 支持注入 `RuleStore`；补上此前从未发射的 `Log.monitor` / `Log.settings`；修正「同一二进制副本」的过时注释。
+- **常驻内存冒烟**：`scripts/measure-memory.sh` 启动真实二进制并断言 `phys_footprint` 低于上限（默认 25 MB），接进 `release-check.sh` 与 CI——此前「内存不反弹」只有「不链接 SwiftUI」这一条间接证据。
+- **凭据历史扫描**：除工作树外，还扫 `git rev-list --all` 的文件名与 pickaxe，提交过又被删掉的私钥同样会被拦下。
+- **发布说明可验证**：Release 正文追加本次构建的 `codesign -d -r-` 期望输出，用户可自行比对签名身份，而不只是信同源的 `SHA256SUMS.txt`。
 
 ## [1.1.0] — 2026-11-03
 
