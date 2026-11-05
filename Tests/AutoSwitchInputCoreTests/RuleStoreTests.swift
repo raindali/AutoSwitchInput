@@ -256,12 +256,14 @@ final class RuleStoreTests: UserDefaultsTestCase {
         XCTAssertEqual(makeStore().restoreStrategy, .alwaysDefault)
     }
 
-    func testSnapshotWithoutRestoreStrategyDefaultsToAlwaysDefault() throws {
-        let json = #"{"autoSwitchEnabled":true,"rules":[],"defaultInputSourceID":null,"launchAtLogin":false}"#
+    func testSnapshotWithoutRestoreStrategyIsDiscarded() {
+        let json = #"{"autoSwitchEnabled":false,"rules":[],"defaultInputSourceID":"old.id","launchAtLogin":false}"#
+        defaults.set(Data(json.utf8), forKey: "settingsSnapshot")
 
-        let snapshot = try JSONDecoder().decode(PersistedSettings.self, from: Data(json.utf8))
+        let store = makeStore()
 
-        XCTAssertEqual(snapshot.restoreStrategy, .alwaysDefault)
+        XCTAssertEqual(store.restoreStrategy, .restoreLast)
+        XCTAssertEqual(store.rules.count, RuleStore.defaultRules().count)
     }
 
     // MARK: - 迁移与播种

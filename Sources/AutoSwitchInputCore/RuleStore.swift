@@ -38,19 +38,6 @@ struct PersistedSettings: Codable, Equatable {
         self.launchAtLogin = launchAtLogin
     }
 
-    private enum CodingKeys: String, CodingKey {
-        case autoSwitchEnabled, rules, defaultInputSourceID, restoreStrategy, launchAtLogin
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        autoSwitchEnabled = try container.decode(Bool.self, forKey: .autoSwitchEnabled)
-        rules = try container.decode([AppRule].self, forKey: .rules)
-        defaultInputSourceID = try container.decodeIfPresent(String.self, forKey: .defaultInputSourceID)
-        // v1.1.1 及更早的快照没有这个字段
-        restoreStrategy = try container.decodeIfPresent(RestoreStrategy.self, forKey: .restoreStrategy) ?? .alwaysDefault
-        launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
-    }
 }
 
 /// Observable store for app rules and settings, persisted to UserDefaults.
