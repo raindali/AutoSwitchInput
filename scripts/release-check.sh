@@ -29,10 +29,40 @@ warn() { echo "  ${YELLOW}!${RESET} $1"; }
 fail() { echo "  ${RED}✗${RESET} $1"; FAILED=1; }
 
 echo "${BOLD}== 1. 凭据泄露检查 ==="
-# 忽略规则只维护在 .gitignore 一处，这里直接问 git，避免两份 pattern 漂移
-SECRET_FILES="$(git ls-files -ci --exclude-standard || true)"
+# 凭据规则只维护在 .gitignore 的凭据段，这里把它转成正则，避免两份清单漂移。
+# （不能直接用 `git check-ignore`：那会把备份 / 图标源等历史产物也算进来。）
+SECRET_PATTERN="$(awk '
+    /^# 签名 \/ 公证凭据/ { inblock = 1; next }
+    inblock && NF == 0    { inblock = 0 }
+    inblock && /^#/       { next }
+    inblock {
+        glob = $0
+        if (glob ~ /\/$/) {
+            sub(/\/$/, "", glob); sub(/^\*/, "", glob)
+            gsub(/\./, "\\.", glob)
+            printf "%s(/|$)|", glob
+        } else if (glob ~ /^\*\./) {
+            sub(/^\*/, "", glob)
+            gsub(/\./, "\\.", glob)
+            printf "%s$|", glob
+        } else if (glob ~ /^\*/) {
+            sub(/^\*/, "", glob)
+            gsub(/\./, "\\.", glob)
+            printf "%s", glob
+        } else if (glob ~ /\*$/) {
+            sub(/\*$/, "", glob)
+            gsub(/\./, "\\.", glob)
+            printf "%s", glob
+        } else {
+            gsub(/\./, "\\.", glob)
+            printf "(^|/)%s$|", glob
+        }
+    }
+' .gitignore | sed 's/|$//')"
+
+SECRET_FILES="$(git ls-files | grep -E "$SECRET_PATTERN" || true)"
 if [ -n "$SECRET_FILES" ]; then
-    fail "仓库里有被 .gitignore 忽略的文件被跟踪（凭据 / 产物）："
+    fail "仓库里有凭据类文件被跟踪："
     echo "$SECRET_FILES" | sed 's/^/      /'
 else
     pass "没有被跟踪的签名 / 公证凭据文件"
@@ -46,12 +76,12 @@ fi
 
 # 只看工作树不够：提交过又被删掉的凭据仍会随仓库分发（公开仓库尤其致命）。
 HISTORY_FILES="$(git rev-list --all --objects 2>/dev/null | awk 'NF > 1 {print $2}' \
-    | git check-ignore --no-index --stdin 2>/dev/null | sort -u || true)"
+    | grep -E "$SECRET_PATTERN" | sort -u || true)"
 if [ -n "$HISTORY_FILES" ]; then
-    fail "git 历史里出现过被 .gitignore 忽略的文件（即使已删除仍可被 clone 到）："
+    fail "git 历史里出现过凭据类文件（即使已删除仍可被 clone 到）："
     printf '%s\n' "$HISTORY_FILES" | head -5 | sed 's/^/      /'
 else
-    pass "git 历史里没有被忽略的凭据 / 产物文件"
+    pass "git 历史里没有凭据类文件"
 fi
 
 # 注意两点：
