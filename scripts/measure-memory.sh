@@ -47,6 +47,13 @@ fi
 
 LINE="$(footprint -p "$PID" 2>/dev/null | grep 'phys_footprint:' | head -1 || true)"
 MB="$(printf '%s\n' "$LINE" | sed -n 's/.*phys_footprint: \([0-9][0-9]*\) MB.*/\1/p')"
+if [ -z "$MB" ]; then
+    # 小于 10 MB 时 footprint 改用 KB 输出，正好是最该通过的情况
+    KB="$(printf '%s\n' "$LINE" | sed -n 's/.*phys_footprint: \([0-9][0-9]*\) KB.*/\1/p')"
+    if [ -n "$KB" ]; then
+        MB=$(( (KB + 1023) / 1024 ))
+    fi
+fi
 
 if [ -z "$MB" ]; then
     echo "  ${RED}✗${RESET} 无法读取 footprint（输出: ${LINE:-空}）"
