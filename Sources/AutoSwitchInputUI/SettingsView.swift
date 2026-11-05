@@ -113,6 +113,35 @@ public struct SettingsView: View {
                     .opacity(store.autoSwitchEnabled ? 1 : 0.5)
                     .disabled(!store.autoSwitchEnabled)
                 }
+
+                Divider().padding(.vertical, Design.spacing1)
+
+                settingRow(
+                    icon: "arrow.uturn.backward",
+                    title: L10n.t("settings.restoreStrategy.title"),
+                    subtitle: L10n.t("settings.restoreStrategy.subtitle")
+                ) {
+                    AutoInputMenu(
+                        items: [
+                            AutoInputMenu.Item(
+                                name: L10n.t("settings.restoreStrategy.alwaysDefault"),
+                                value: RestoreStrategy.alwaysDefault.rawValue
+                            ),
+                            AutoInputMenu.Item(
+                                name: L10n.t("settings.restoreStrategy.restoreLast"),
+                                value: RestoreStrategy.restoreLast.rawValue
+                            ),
+                        ],
+                        selection: store.restoreStrategy.rawValue,
+                        placeholder: L10n.t("settings.restoreStrategy.alwaysDefault"),
+                        fixedWidth: 170
+                    ) { value in
+                        guard let value, let strategy = RestoreStrategy(rawValue: value) else { return }
+                        store.restoreStrategy = strategy
+                    }
+                    .opacity(store.autoSwitchEnabled ? 1 : 0.5)
+                    .disabled(!store.autoSwitchEnabled)
+                }
             }
         }
     }

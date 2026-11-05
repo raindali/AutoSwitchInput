@@ -31,6 +31,12 @@
 "settings.defaultInputSource.subtitle" = "Used when no rule matches";
 "settings.defaultInputSource.none" = "Don't switch";
 
+/* 输入法恢复策略 */
+"settings.restoreStrategy.title" = "Input source restore";
+"settings.restoreStrategy.subtitle" = "When you switch back to an app";
+"settings.restoreStrategy.alwaysDefault" = "Always switch to the default input source";
+"settings.restoreStrategy.restoreLast" = "Restore the last used input source";
+
 /* 规则列表 */
 "settings.rules.title" = "App rules";
 "settings.rules.add" = "Add";

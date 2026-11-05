@@ -7,13 +7,50 @@ public extension Notification.Name {
     static let autoSwitchRulesDidChange = Notification.Name("com.qingwei.inputswitch.rulesDidChange")
 }
 
+/// 未命中规则时，切换回应用要如何处理输入源。
+public enum RestoreStrategy: String, Codable, Sendable {
+    /// 总是切换到默认输入法。
+    case alwaysDefault
+    /// 恢复该 App 上次使用的输入法；没有记录时用默认输入法。
+    case restoreLast
+}
+
 /// 持久化的全部设置。整体作为一个 `Codable` 快照存取，
 /// 避免「保存」和「重新读取」维护两份手写字段列表而悄悄漂移。
 struct PersistedSettings: Codable, Equatable {
     var autoSwitchEnabled: Bool
     var rules: [AppRule]
     var defaultInputSourceID: String?
+    var restoreStrategy: RestoreStrategy
     var launchAtLogin: Bool
+
+    init(
+        autoSwitchEnabled: Bool,
+        rules: [AppRule],
+        defaultInputSourceID: String?,
+        restoreStrategy: RestoreStrategy,
+        launchAtLogin: Bool
+    ) {
+        self.autoSwitchEnabled = autoSwitchEnabled
+        self.rules = rules
+        self.defaultInputSourceID = defaultInputSourceID
+        self.restoreStrategy = restoreStrategy
+        self.launchAtLogin = launchAtLogin
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case autoSwitchEnabled, rules, defaultInputSourceID, restoreStrategy, launchAtLogin
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        autoSwitchEnabled = try container.decode(Bool.self, forKey: .autoSwitchEnabled)
+        rules = try container.decode([AppRule].self, forKey: .rules)
+        defaultInputSourceID = try container.decodeIfPresent(String.self, forKey: .defaultInputSourceID)
+        // v1.1.1 及更早的快照没有这个字段
+        restoreStrategy = try container.decodeIfPresent(RestoreStrategy.self, forKey: .restoreStrategy) ?? .alwaysDefault
+        launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
+    }
 }
 
 /// Observable store for app rules and settings, persisted to UserDefaults.
@@ -34,6 +71,10 @@ public final class RuleStore: ObservableObject {
     @Published public var defaultInputSourceID: String? {
         didSet { save() }
     }
+    /// 未命中规则时，切换回应用要如何处理输入源。
+    @Published public var restoreStrategy: RestoreStrategy {
+        didSet { save() }
+    }
     /// 是否开机启动（登录项）。写入 UserDefaults 并同步系统登录项状态。
     @Published public var launchAtLogin: Bool {
         didSet {
@@ -46,12 +87,17 @@ public final class RuleStore: ObservableObject {
     /// 菜单栏进程用它把当前前台 App 的规则重放一遍（否则改完规则要切走再切回来才生效）。
     public var onRemoteChange: (() -> Void)?
 
+    /// 由菜单栏进程注入：返回某个 App 上次使用的输入源（调用方负责校验仍可用）。
+    /// 只有菜单栏进程维护这张表，设置进程不需要。
+    public var rememberedInputSource: ((String) -> String?)?
+
     private enum Keys {
         static let snapshot = "settingsSnapshot"
         static let legacyRules = "appRules"
         static let legacyEnabled = "autoSwitchEnabled"
         static let legacyDefault = "defaultInputSourceID"
         static let legacyLaunch = "launchAtLogin"
+        static let hasLaunchedBefore = "hasLaunchedBefore"
     }
 
     private let defaults: UserDefaults
@@ -62,7 +108,7 @@ public final class RuleStore: ObservableObject {
 
     /// 正在应用来自另一个进程的变更：此时属性赋值不应再触发保存/回发通知。
     private var isApplyingRemoteChange = false
-    /// 1.0 的旧 key 只需清理一次，不必每次保存都发四个 removeObject。
+    /// 1.0 的旧 key 只需清理一次。
     private var legacyKeysCleaned = false
     /// 上次同步给系统的登录项状态，避免每次保存都去问 SMAppService。
     private var lastAppliedLaunchAtLogin: Bool?
@@ -84,6 +130,7 @@ public final class RuleStore: ObservableObject {
         let loaded = Self.load(from: defaults)
         autoSwitchEnabled = loaded.autoSwitchEnabled
         defaultInputSourceID = loaded.defaultInputSourceID
+        restoreStrategy = loaded.restoreStrategy
         launchAtLogin = loaded.launchAtLogin
         rules = loaded.rules
 
@@ -91,6 +138,9 @@ public final class RuleStore: ObservableObject {
             if rules.isEmpty {
                 let seed = Self.seedSources()
                 rules = RuleStore.defaultRules(english: seed.english, chinese: seed.chinese)
+            }
+            if Self.hasNoLegacySettings(defaults) {
+                restoreStrategy = .restoreLast
             }
             save()
         }
@@ -129,6 +179,7 @@ public final class RuleStore: ObservableObject {
             autoSwitchEnabled: autoSwitchEnabled,
             rules: rules,
             defaultInputSourceID: defaultInputSourceID,
+            restoreStrategy: restoreStrategy,
             launchAtLogin: launchAtLogin
         )
     }
@@ -175,6 +226,7 @@ public final class RuleStore: ObservableObject {
         if autoSwitchEnabled != snapshot.autoSwitchEnabled { autoSwitchEnabled = snapshot.autoSwitchEnabled }
         if rules != snapshot.rules { rules = snapshot.rules }
         if defaultInputSourceID != snapshot.defaultInputSourceID { defaultInputSourceID = snapshot.defaultInputSourceID }
+        if restoreStrategy != snapshot.restoreStrategy { restoreStrategy = snapshot.restoreStrategy }
         if launchAtLogin != snapshot.launchAtLogin { launchAtLogin = snapshot.launchAtLogin }
         isApplyingRemoteChange = false
 
@@ -186,18 +238,28 @@ public final class RuleStore: ObservableObject {
     // MARK: - Snapshot IO
 
     static func load(from defaults: UserDefaults) -> PersistedSettings {
-        if let data = defaults.data(forKey: Keys.snapshot),
-           let snapshot = try? JSONDecoder().decode(PersistedSettings.self, from: data) {
-            return snapshot
+        if let data = defaults.data(forKey: Keys.snapshot) {
+            if let snapshot = try? JSONDecoder().decode(PersistedSettings.self, from: data) {
+                return snapshot
+            }
+            // 无法解码的数据留着只会让每次启动都读到空设置
+            defaults.removeObject(forKey: Keys.snapshot)
         }
-        // 1.0 的四个散装 key
+        // 1.0 的散装 key
         return PersistedSettings(
             autoSwitchEnabled: defaults.object(forKey: Keys.legacyEnabled) as? Bool ?? true,
             rules: defaults.data(forKey: Keys.legacyRules)
                 .flatMap { try? JSONDecoder().decode([AppRule].self, from: $0) } ?? [],
             defaultInputSourceID: defaults.string(forKey: Keys.legacyDefault),
+            restoreStrategy: .alwaysDefault,
             launchAtLogin: defaults.bool(forKey: Keys.legacyLaunch)
         )
+    }
+
+    private static func hasNoLegacySettings(_ defaults: UserDefaults) -> Bool {
+        defaults.bool(forKey: Keys.hasLaunchedBefore) == false
+            && defaults.object(forKey: Keys.legacyRules) == nil
+            && defaults.object(forKey: Keys.legacyEnabled) == nil
     }
 
     private static func removeLegacyKeys(from defaults: UserDefaults) {
@@ -242,11 +304,17 @@ public final class RuleStore: ObservableObject {
         rules.first { $0.bundleIdentifier == bundleID }
     }
 
-    /// 该前台 App 应该切到哪个输入源：规则命中优先，否则默认输入源；
-    /// 总开关关闭或两者都没有时返回 nil（不切换）。
+    /// 该前台 App 应该切到哪个输入源：规则命中优先；否则按「跟随上次」或默认输入源。
+    /// 总开关关闭、没有记录或没有默认值时返回 nil（不切换）。
     public func targetInputSourceID(for bundleID: String) -> String? {
         guard autoSwitchEnabled else { return nil }
-        return rule(for: bundleID)?.inputSourceID ?? defaultInputSourceID
+        if let rule = rule(for: bundleID) { return rule.inputSourceID }
+        switch restoreStrategy {
+        case .alwaysDefault:
+            return defaultInputSourceID
+        case .restoreLast:
+            return rememberedInputSource?(bundleID) ?? defaultInputSourceID
+        }
     }
 
     /// Returns currently running regular apps (suitable for the picker).

@@ -31,6 +31,12 @@
 "settings.defaultInputSource.subtitle" = "无匹配规则时使用的输入法";
 "settings.defaultInputSource.none" = "不切换";
 
+/* 输入法恢复策略 */
+"settings.restoreStrategy.title" = "输入法恢复策略";
+"settings.restoreStrategy.subtitle" = "切换回应用时";
+"settings.restoreStrategy.alwaysDefault" = "总是切换至默认输入法";
+"settings.restoreStrategy.restoreLast" = "恢复上次使用的输入法";
+
 /* 规则列表 */
 "settings.rules.title" = "应用规则";
 "settings.rules.add" = "添加";

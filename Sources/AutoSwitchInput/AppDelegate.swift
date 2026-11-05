@@ -6,6 +6,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem?
     private var settingsProcess: Process?
+    private lazy var recentInputSources = RecentInputSourceStore()
+    private var previousBundleID: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusBar()
@@ -115,6 +117,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.replayCurrentApp()
         }
 
+        RuleStore.shared.rememberedInputSource = { [weak self] bundleID in
+            guard let id = self?.recentInputSources.source(for: bundleID),
+                  InputMethodManager.shared.isEnabled(id: id)
+            else { return nil }
+            return id
+        }
+
         replayCurrentApp()
     }
 
@@ -124,6 +133,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleAppChange(bundleID: String, appName: String) {
+        if RuleStore.shared.autoSwitchEnabled,
+           let previous = previousBundleID, previous != bundleID,
+           let current = InputMethodManager.shared.getCurrentInputSourceID() {
+            recentInputSources.remember(current, for: previous)
+        }
+        previousBundleID = bundleID
+
         guard let targetID = RuleStore.shared.targetInputSourceID(for: bundleID) else { return }
 
         if InputMethodManager.shared.selectInputSource(id: targetID) {

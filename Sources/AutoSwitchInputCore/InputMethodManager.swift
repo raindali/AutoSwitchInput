@@ -150,4 +150,24 @@ public final class InputMethodManager {
     public func name(for id: String) -> String {
         getAllInputSources().first { $0.id == id }?.name ?? id
     }
+
+    /// 该输入源当前是否仍处于启用状态（用于校验记住的输入源是否还有效）。
+    public func isEnabled(id: String) -> Bool {
+        // 与 selectInputSource 一样按 ID 过滤，避免为回答一个问题枚举全部输入源。
+        let filter = [kTISPropertyInputSourceID as String: id] as CFDictionary
+        if let unmanaged = TISCreateInputSourceList(filter, true) {
+            let cfArray = unmanaged.takeRetainedValue()
+            let count = CFArrayGetCount(cfArray)
+            for i in 0..<count {
+                guard let rawPtr = CFArrayGetValueAtIndex(cfArray, i) else { continue }
+                let source = Unmanaged<TISInputSource>.fromOpaque(rawPtr).takeUnretainedValue()
+                if Self.boolProperty(source, kTISPropertyInputSourceIsEnabled) ?? false { return true }
+            }
+            if count > 0 { return false }
+        }
+
+        return Self.withAllInputSources { sources in
+            sources.contains { Self.stringProperty($0, kTISPropertyInputSourceID) == id }
+        }
+    }
 }

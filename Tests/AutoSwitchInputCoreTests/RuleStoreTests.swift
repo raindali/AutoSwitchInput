@@ -11,23 +11,7 @@ private final class CountingDefaults: UserDefaults {
 }
 
 @MainActor
-final class RuleStoreTests: XCTestCase {
-    private var suiteName = ""
-    private var defaults: UserDefaults!
-
-    override func setUp() {
-        super.setUp()
-        suiteName = "AutoSwitchInputTests.\(UUID().uuidString)"
-        defaults = UserDefaults(suiteName: suiteName)
-        defaults.removePersistentDomain(forName: suiteName)
-    }
-
-    override func tearDown() {
-        defaults.removePersistentDomain(forName: suiteName)
-        defaults = nil
-        super.tearDown()
-    }
-
+final class RuleStoreTests: UserDefaultsTestCase {
     private func makeStore() -> RuleStore {
         RuleStore(defaults: defaults, syncsAcrossProcesses: false, managesLaunchAtLogin: false)
     }
@@ -91,12 +75,17 @@ final class RuleStoreTests: XCTestCase {
         XCTAssertNil(store.rule(for: "com.missing"))
     }
 
-    func testCorruptedRulesDataFallsBackToDefaults() {
-        defaults.set(Data("not json".utf8), forKey: "appRules")
+    func testCorruptedSnapshotFallsBackToDefaults() {
+        defaults.set(Data("not json".utf8), forKey: "settingsSnapshot")
 
         let store = makeStore()
         XCTAssertEqual(store.rules.map(\.bundleIdentifier), RuleStore.defaultRules().map(\.bundleIdentifier))
-        XCTAssertNotNil(defaults.data(forKey: "settingsSnapshot"))
+        XCTAssertNotNil(
+            try? JSONDecoder().decode(
+                PersistedSettings.self,
+                from: try XCTUnwrap(defaults.data(forKey: "settingsSnapshot"))
+            )
+        )
     }
 
     // MARK: - 跨进程同步
@@ -116,6 +105,7 @@ final class RuleStoreTests: XCTestCase {
                 autoSwitchEnabled: false,
                 rules: [external],
                 defaultInputSourceID: "com.apple.keylayout.US",
+                restoreStrategy: .alwaysDefault,
                 launchAtLogin: false
             )
         )
@@ -143,6 +133,7 @@ final class RuleStoreTests: XCTestCase {
                 autoSwitchEnabled: true,
                 rules: [external],
                 defaultInputSourceID: nil,
+                restoreStrategy: .alwaysDefault,
                 launchAtLogin: false
             )
         )
@@ -166,6 +157,7 @@ final class RuleStoreTests: XCTestCase {
             autoSwitchEnabled: false,
             rules: [external],
             defaultInputSourceID: "com.apple.keylayout.US",
+            restoreStrategy: .alwaysDefault,
             launchAtLogin: false
         )
         store.applyRemoteSnapshot(try! JSONEncoder().encode(snapshot))
@@ -188,7 +180,13 @@ final class RuleStoreTests: XCTestCase {
         store.onRemoteChange = { called += 1 }
         store.applyRemoteSnapshot(
             try! JSONEncoder().encode(
-                PersistedSettings(autoSwitchEnabled: false, rules: [], defaultInputSourceID: nil, launchAtLogin: false)
+                PersistedSettings(
+                    autoSwitchEnabled: false,
+                    rules: [],
+                    defaultInputSourceID: nil,
+                    restoreStrategy: .alwaysDefault,
+                    launchAtLogin: false
+                )
             )
         )
         XCTAssertEqual(called, 1)
@@ -196,26 +194,74 @@ final class RuleStoreTests: XCTestCase {
 
     // MARK: - 输入源决策
 
-    func testTargetInputSourcePrefersRuleThenDefault() {
-        let store = makeStore()
-        store.autoSwitchEnabled = true
-        store.defaultInputSourceID = "default.id"
-        store.rules = [
-            AppRule(bundleIdentifier: "com.a", appName: "A", inputSourceID: "rule.id", inputSourceName: "R")
+    func testTargetInputSourceDecision() {
+        struct Case {
+            let name: String
+            let autoSwitch: Bool
+            let strategy: RestoreStrategy
+            let hasRule: Bool
+            let remembered: String?
+            let defaultID: String?
+            let expected: String?
+        }
+
+        let cases: [Case] = [
+            Case(name: "规则命中优先", autoSwitch: true, strategy: .restoreLast, hasRule: true,
+                 remembered: "remembered.id", defaultID: "default.id", expected: "rule.id"),
+            Case(name: "恢复上次命中", autoSwitch: true, strategy: .restoreLast, hasRule: false,
+                 remembered: "remembered.id", defaultID: "default.id", expected: "remembered.id"),
+            Case(name: "恢复上次无记录时回落默认值", autoSwitch: true, strategy: .restoreLast, hasRule: false,
+                 remembered: nil, defaultID: "default.id", expected: "default.id"),
+            Case(name: "恢复上次且没有默认值时不切换", autoSwitch: true, strategy: .restoreLast, hasRule: false,
+                 remembered: nil, defaultID: nil, expected: nil),
+            Case(name: "总是切到默认输入源", autoSwitch: true, strategy: .alwaysDefault, hasRule: false,
+                 remembered: "remembered.id", defaultID: "default.id", expected: "default.id"),
+            Case(name: "总是默认但没有默认值时不切换", autoSwitch: true, strategy: .alwaysDefault, hasRule: false,
+                 remembered: "remembered.id", defaultID: nil, expected: nil),
+            Case(name: "总开关关闭时不切换", autoSwitch: false, strategy: .restoreLast, hasRule: true,
+                 remembered: "remembered.id", defaultID: "default.id", expected: nil),
         ]
 
-        XCTAssertEqual(store.targetInputSourceID(for: "com.a"), "rule.id")
-        XCTAssertEqual(store.targetInputSourceID(for: "com.unknown"), "default.id")
+        for c in cases {
+            let store = makeStore()
+            store.autoSwitchEnabled = c.autoSwitch
+            store.restoreStrategy = c.strategy
+            store.defaultInputSourceID = c.defaultID
+            store.rules = c.hasRule
+                ? [AppRule(bundleIdentifier: "com.a", appName: "A", inputSourceID: "rule.id", inputSourceName: "R")]
+                : []
+            store.rememberedInputSource = { _ in c.remembered }
 
-        store.autoSwitchEnabled = false
-        XCTAssertNil(store.targetInputSourceID(for: "com.a"), "总开关关闭时不应切换")
+            XCTAssertEqual(store.targetInputSourceID(for: "com.a"), c.expected, c.name)
+        }
     }
 
-    func testTargetInputSourceIsNilWithoutRuleOrDefault() {
+    // MARK: - 输入法恢复策略
+
+    func testFirstInstallDefaultsToRestoreLast() {
+        XCTAssertEqual(makeStore().restoreStrategy, .restoreLast)
+    }
+
+    func testRestoreStrategyPersistsInSnapshot() {
         let store = makeStore()
-        store.rules = []
-        store.defaultInputSourceID = nil
-        XCTAssertNil(store.targetInputSourceID(for: "com.a"))
+        store.restoreStrategy = .alwaysDefault
+
+        XCTAssertEqual(makeStore().restoreStrategy, .alwaysDefault)
+    }
+
+    func testLegacyUpgradeKeepsAlwaysDefault() {
+        defaults.set(false, forKey: "autoSwitchEnabled")
+        defaults.set(true, forKey: "hasLaunchedBefore")
+
+        XCTAssertEqual(makeStore().restoreStrategy, .alwaysDefault)
+    }
+
+    func testSnapshotWithoutRestoreStrategyDefaultsToAlwaysDefault() throws {
+        let json = #"{"autoSwitchEnabled":true,"rules":[],"defaultInputSourceID":null,"launchAtLogin":false}"#
+
+        let snapshot = try JSONDecoder().decode(PersistedSettings.self, from: Data(json.utf8))
+
+        XCTAssertEqual(snapshot.restoreStrategy, .alwaysDefault)
     }
 
     // MARK: - 迁移与播种
@@ -223,6 +269,7 @@ final class RuleStoreTests: XCTestCase {
     func testLegacyKeysMigrateIntoSnapshot() {
         defaults.set(false, forKey: "autoSwitchEnabled")
         defaults.set("com.apple.keylayout.US", forKey: "defaultInputSourceID")
+        defaults.set(true, forKey: "hasLaunchedBefore")
         let legacyRule = AppRule(
             bundleIdentifier: "com.legacy", appName: "Legacy", inputSourceID: "id", inputSourceName: "n"
         )
@@ -232,12 +279,14 @@ final class RuleStoreTests: XCTestCase {
         XCTAssertFalse(store.autoSwitchEnabled)
         XCTAssertEqual(store.rules, [legacyRule])
         XCTAssertEqual(store.defaultInputSourceID, "com.apple.keylayout.US")
+        XCTAssertEqual(store.restoreStrategy, .alwaysDefault)
         XCTAssertNil(defaults.data(forKey: "appRules"))
         XCTAssertNotNil(defaults.data(forKey: "settingsSnapshot"))
     }
 
     func testSeedsRulesForUpgradedUserWhoNeverPersistedThem() {
         defaults.set(false, forKey: "autoSwitchEnabled")
+
         let store = makeStore()
         XCTAssertEqual(store.rules.count, RuleStore.defaultRules().count)
         XCTAssertFalse(store.autoSwitchEnabled)
